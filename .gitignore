@@ -1,0 +1,31 @@
+.pio
+
+## OS specific ########
+.DS_Store
+.fuse_hidden*
+
+## Compilation artifacts ########
+*.pyc
+*.d
+*.o
+*.gcno
+*.gcda
+
+## Project files ######
+.platformio
+.pio
+.clang_complete
+.gcc-flags.json
+.cache
+data
+unpacked_fs
+build
+build_output
+firmware.map
+firmware.asm
+src/*.ino.cpp
+
+## Visual Studio Code specific ######
+.vscode
+*.bak
+*.code-workspace
