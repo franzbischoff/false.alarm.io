@@ -36,8 +36,8 @@ void Mpx::Compute() {
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _data needs to be minus _mmu[i] before multiply
     float m = _mmu[i];
-    c = std::inner_product(_data.begin() + i, _data.begin() + (i + _window_size - 1), ww.begin(), 0.0,
-                           std::plus<float>(), [m](float &x, float &y) { return ((x - m) * y); });
+    c = std::inner_product(_data.begin() + i, _data.begin() + (i + _window_size), ww.begin(), 0.0, std::plus<float>(),
+                           [m](float &x, float &y) { return ((x - m) * y); });
 
     uint32_t off_max = (_data_len - _window_size - i + 1);
 
@@ -46,11 +46,54 @@ void Mpx::Compute() {
       c = c + df[offset] * dg[off_diag] + df[off_diag] * dg[offset];
       c_cmp = c * _sig[offset] * _sig[off_diag];
 
-      // MP
+      // RMP
       if (c_cmp > _matrix_profile[offset]) {
         _matrix_profile[offset] = c_cmp;
         _profile_index[offset] = off_diag + 1;
       }
+      // LMP
+      if (c_cmp > _matrix_profile[off_diag]) {
+        _matrix_profile[off_diag] = c_cmp;
+        _profile_index[off_diag] = offset + 1;
+      }
+    }
+  }
+}
+
+void Mpx::ComputeStream() {
+  float c, c_cmp;
+
+  uint16_t new_data_len = 80; // incoming data
+
+  this->_diag_start = 0;
+  this->_diag_end = this->_profile_len - this->_exclusion_zone;
+
+  ogita_t meansig;
+  muinvn(_data, _window_size, meansig);
+  _mmu = meansig.avg;
+  _sig = meansig.sig;
+
+  std::vector<float> df = Ddf_s();
+  std::vector<float> dg = Ddg_s();
+  std::vector<float> ww = Ww_s();
+
+  for (uint32_t i = _diag_start; i < _diag_end; i++) {
+    // this mess is just the inner_product but _data needs to be minus _mmu[i] before multiply
+    float m = _mmu[i];
+    c = std::inner_product(_data.begin() + i, _data.begin() + (i + _window_size), ww.begin(), 0.0, std::plus<float>(),
+                           [m](float &x, float &y) { return ((x - m) * y); });
+
+    uint32_t off_min = MAX(_data_len - _window_size - new_data_len, _data_len - _window_size - i - 1);
+    uint32_t off_start = _data_len - _window_size;
+
+    for (uint32_t offset = off_start; offset > off_min; offset--) {
+      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
+      uint32_t off_diag = offset - (_data_len - _window_size - i);
+
+      c = c + df[offset] * dg[off_diag] + df[off_diag] * dg[offset];
+      c_cmp = c * _sig[offset] * _sig[off_diag];
+
+      // RMP
       if (c_cmp > _matrix_profile[off_diag]) {
         _matrix_profile[off_diag] = c_cmp;
         _profile_index[off_diag] = offset + 1;
@@ -111,6 +154,46 @@ void Mpx::muinvn(const std::vector<float> data, uint32_t window_size, ogita_t &r
   result.sig = sig;
 }
 
+std::vector<float> Mpx::Ddf_s() {
+  uint32_t range = this->_data_len - this->_window_size;
+  std::vector<float> ddf(range + 1, 0);
+
+  // differentials have 0 as their first entry. This simplifies index
+  // calculations slightly and allows us to avoid special "first line"
+  // handling.
+
+  for (uint32_t i = 0; i < range; i++) {
+    ddf[i] = 0.5 * (this->_data[i] - this->_data[i + this->_window_size]);
+  }
+
+  return ddf;
+}
+
+std::vector<float> Mpx::Ddg_s() {
+  uint32_t range = this->_data_len - this->_window_size;
+  std::vector<float> ddg(range + 1, 0);
+
+  // differentials have 0 as their first entry. This simplifies index
+  // calculations slightly and allows us to avoid special "first line"
+  // handling.
+
+  for (uint32_t i = 0; i < range; i++) {
+    ddg[i] = (this->_data[i + this->_window_size] - this->_mmu[i + 1]) + (this->_data[i] - this->_mmu[i]);
+  }
+
+  return ddg;
+}
+
+std::vector<float> Mpx::Ww_s() {
+  uint32_t range = this->_window_size;
+  std::vector<float> ww(range, 0);
+
+  for (uint32_t i = 0; i < range; i++) {
+    ww[i] = (this->_data[this->_data_len - this->_window_size + i] - this->_mmu[this->_data_len - this->_window_size]);
+  }
+  return ww;
+}
+
 std::vector<float> Mpx::Ddf() {
   uint32_t range = this->_data_len - this->_window_size;
   std::vector<float> ddf(range + 1, 0);
@@ -120,7 +203,7 @@ std::vector<float> Mpx::Ddf() {
   // handling.
 
   for (uint32_t i = 0; i < range; i++) {
-    ddf[i + 1] = 0.5 * this->_data[i + this->_window_size] - this->_data[i];
+    ddf[i + 1] = 0.5 * (this->_data[i + this->_window_size] - this->_data[i]);
   }
 
   return ddf;

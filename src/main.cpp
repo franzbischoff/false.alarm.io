@@ -16,13 +16,18 @@ int main() {
 
   Mpx mpx(test_data, 10, 0.5, 0);
 
-  mpx.Compute();
+  // mpx.Compute();
+  mpx.ComputeStream();
 
   std::vector<float> res = mpx.get_matrix();
+
+  cout << endl;
 
   for (float n : res) {
     cout << n << ", ";
   }
+
+  cout << endl;
   cout << endl;
 
   std::vector<int> idx = mpx.get_indexes();

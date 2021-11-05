@@ -5,6 +5,24 @@
 #include <vector>
 #include <string>
 
+#ifndef MIN
+#define MIN(y, x) ((x) < (y) && (x) == (x) ? (x) : (y))
+#endif
+#ifndef MAX
+#define MAX(y, x) ((x) > (y) && (x) == (x) ? (x) : (y))
+#endif
+
+#ifndef INT_MAX
+#define INT_MAX 2147483647
+#endif
+
+#ifndef M_SQRT_3
+#define M_SQRT_3 1.732050807568877293527446341506 /* sqrt(3) */
+#endif
+#ifndef M_PI_4
+#define M_PI_4 0.785398163397448309615660845820 /* pi/4 */
+#endif
+
 // #include <Arduino.h>
 // #include <ArduinoSTL.h>
 
@@ -19,12 +37,15 @@ class Mpx {
 public:
   Mpx(std::vector<float> data, uint16_t window_size, float ez, uint16_t mp_time_constraint);
   void Compute();
+  void ComputeStream();
   std::vector<float> movsum(std::vector<float> data, uint32_t window_size);
   void muinvn(const std::vector<float> data, uint32_t window_size, ogita_t &result);
   std::vector<float> Ddf();
   std::vector<float> Ddg();
   std::vector<float> Ww();
-
+  std::vector<float> Ddf_s();
+  std::vector<float> Ddg_s();
+  std::vector<float> Ww_s();
   std::vector<float> get_matrix() { return _matrix_profile; };
   std::vector<int> get_indexes() { return _profile_index; };
 
