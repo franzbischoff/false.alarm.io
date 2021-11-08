@@ -1,0 +1,24 @@
+{
+  "build": {
+    "f_cpu": "1200000000L"
+  },
+  "connectivity": [
+    "wifi",
+    "bluetooth",
+    "ethernet"
+  ],
+  "debug": {
+    "tools": {
+      "gdb": {
+        "gdb_path": "D:/msys64/mingw64/bin/gdb.exe"
+      }
+    }
+  },
+  "name": "Generic x86",
+  "upload": {
+    "maximum_ram_size": 1073741824,
+    "maximum_size": 1073741824
+  },
+  "url": "https://github.com/platformio/platform-windows_x86.git",
+  "vendor": "Windows"
+}

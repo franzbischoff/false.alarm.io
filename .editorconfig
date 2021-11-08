@@ -5,8 +5,28 @@ root = true
 
 [*]
 indent_style = space
-indent_size = 2
-end_of_line = crlf
+end_of_line = lf
 charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
+
+# python
+[*.py]
+indent_size = 4
+
+# C++
+[*.{cpp,h,tcc}]
+indent_size = 2
+
+# Web
+[*.{js,html,css}]
+indent_size = 2
+
+# YAML
+[*.{yaml,yml}]
+indent_size = 2
+quote_type = single
+
+# JSON
+[*.json]
+indent_size = 2

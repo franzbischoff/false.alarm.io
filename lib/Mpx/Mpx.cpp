@@ -1,5 +1,4 @@
 #include "Mpx.hpp"
-#include <algorithm>
 
 namespace MatrixProfile {
 
@@ -116,13 +115,14 @@ std::vector<float> Mpx::movsum(std::vector<float> data, uint32_t window_size) {
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
-  if (resid > 0.001) {
-    std::cout << "Residual value is large. Some precision may be lost. res = " << resid << std::endl;
-  }
+  // if (resid > 0.001)
+  // {
+  //   std::cout << "Residual value is large. Some precision may be lost. res = " << resid << std::endl;
+  // }
 
   res[0] = accum + resid;
 
-  for (int32_t i = window_size; i < data.size(); i++) {
+  for (uint32_t i = window_size; i < data.size(); i++) {
     double m = data[i - window_size];
     double n = data[i];
     double p = accum - m;
@@ -139,9 +139,9 @@ std::vector<float> Mpx::movsum(std::vector<float> data, uint32_t window_size) {
 
 void Mpx::muinvn(const std::vector<float> data, uint32_t window_size, ogita_t &result) {
   std::vector<float> mu = movsum(data, window_size);
-  transform(mu.begin(), mu.end(), mu.begin(), [window_size](float &c) { return c / (float)window_size; });
+  std::transform(mu.begin(), mu.end(), mu.begin(), [window_size](float &c) { return c / (float)window_size; });
   std::vector<float> data2(data);
-  transform(data2.begin(), data2.end(), data2.begin(), data2.begin(), std::multiplies<float>());
+  std::transform(data2.begin(), data2.end(), data2.begin(), data2.begin(), std::multiplies<float>());
   std::vector<float> data2_sum = movsum(data2, window_size);
 
   std::vector<float> sig(data.size() - window_size + 1, 0);
