@@ -7,13 +7,6 @@
     "bluetooth",
     "ethernet"
   ],
-  "debug": {
-    "tools": {
-      "gdb": {
-        "gdb_path": "D:/msys64/mingw64/bin/gdb.exe"
-      }
-    }
-  },
   "name": "Generic x86",
   "upload": {
     "maximum_ram_size": 1073741824,

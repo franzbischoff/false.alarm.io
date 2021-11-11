@@ -81,8 +81,6 @@ venv.bak/
 .pioenvs
 .piolibdeps
 .pio
-.vscode/
-!.vscode/tasks.json
 CMakeListsPrivate.txt
 CMakeLists.txt
 
@@ -151,7 +149,9 @@ firmware.asm
 src/*.ino.cpp
 
 ## Visual Studio Code specific ######
-.vscode
+.vscode/*
+!.vscode/tasks.json
+!.vscode/extensions.json
 *.bak
 *.code-workspace
 
@@ -160,6 +160,4 @@ src/*.ino.cpp
 tools/
 pio-tools/
 api/
-boards/*
-!boards/generic-x86.json
 esp32_par*.csv
