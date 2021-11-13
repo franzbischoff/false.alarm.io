@@ -40,80 +40,31 @@ int done = 0;
 // cppcheck-suppress unusedFunction
 void setup() {
   // debug_init();
-  pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(9600);
-  delay(100);
-  Serial.println("Teste");
 }
 
 // cppcheck-suppress unusedFunction
 void loop() {
 
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(1000);
   if (done)
     return;
 
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(1000);
-
   mpx.ComputeStream();
-  // Serial.println("Teste3");
   float *res = mpx.get_matrix();
 
   for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-    // printf("%.2f\n", (double)res[i]);
-    Serial.println((double)res[i], 2);
+    Serial.printf("%.2f, ", (double)res[i]);
   }
+  Serial.println();
 
-  // for (unsigned int i = 0; i < res.size(); i++) {
-  //   Serial.println(res[i]);
-  // }
-  // Serial.println("Done");
+  int16_t *idxs = mpx.get_indexes();
+
+  for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+    Serial.printf("%d, ", (int16_t)idxs[i]);
+  }
+  Serial.println();
+
   done = 1;
-
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(1000);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(1000);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(3000);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
 }
 #else
 int main(int argc, char **argv) {
@@ -122,52 +73,3 @@ int main(int argc, char **argv) {
   return 0;
 }
 #endif
-
-// int main(int argc, char **argv) {
-
-// #ifdef ARDUINO_ARCH_AVR
-//   // UNITY_BEGIN();
-//   setup();
-
-//   while (!done)
-//     loop();
-
-//     // RUN_TEST(test_connect);
-
-//     // return UNITY_END();
-
-// #else
-//   MatrixProfile::Mpx mpx(test_data, 100, 10, 0.5, 0, 5000);
-
-// #ifdef USE_STL
-//   std::vector<float> res;
-//   std::vector<int> idx;
-// #else
-//   float *res;
-//   int16_t *idx;
-// #endif // USE_STL
-
-//   // mpx.Compute();
-//   mpx.ComputeStream();
-
-//   res = mpx.get_matrix();
-
-//   printf("\n");
-
-//   for (uint32_t i = 0; i < 100 - 10 + 1; i++) {
-//     printf("%.2f, ", res[i]);
-//   }
-
-//   printf("\n");
-//   printf("\n");
-
-//   idx = mpx.get_indexes();
-
-//   for (uint32_t i = 0; i < 100 - 10 + 1; i++) {
-//     printf("%d, ", idx[i]);
-//   }
-//   printf("\n");
-
-//   return 0;
-// #endif
-// }

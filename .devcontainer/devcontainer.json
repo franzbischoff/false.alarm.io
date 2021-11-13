@@ -1,0 +1,92 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.188.0/containers/ubuntu
+{
+  "name": "false.alarm.io dev",
+  "dockerFile": "Dockerfile",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "containerEnv": {
+    "WORKSPACE_DIRECTORY": "/workspace",
+  },
+  "runArgs": [
+    "-e",
+    "GIT_EDITOR=code",
+    "-e",
+    "DOCKER_BUILDKIT=1",
+    "--privileged"
+  ],
+  // Set *default* container specific settings.json values on container create.
+  "settings": {
+    "cSpell.allowCompoundWords": true,
+    "cSpell.ignorePaths": [
+      "**/package-lock.json",
+      "**/node_modules/**",
+      "**/vscode-extension/**",
+      "**/.git/objects/**",
+      ".vscode",
+      ".vscode-insiders",
+      "**/.devcontainer/**"
+    ],
+    "terminal.integrated.defaultProfile.linux": "zsh",
+    // "terminal.integrated.allowWorkspaceConfiguration": true,
+    "terminal.integrated.profiles.linux": {
+      "zsh": {
+        "path": "/bin/zsh"
+      }
+    },
+    "terminal.integrated.scrollback": 10000,
+    "terminal.integrated.tabs.enabled": true,
+    "terminal.integrated.tabs.focusMode": "singleClick",
+    "terminal.integrated.environmentChangesIndicator": "on",
+    "testExplorer.onReload": "retire",
+    "testExplorer.onStart": "retire",
+  },
+  // Add the IDs of extensions you want installed when the container is created.
+  "extensions": [
+    "alefragnani.bookmarks",
+    "alefragnani.project-manager",
+    "bibhasdn.unique-lines",
+    "christian-kohler.path-intellisense",
+    "codezombiech.gitignore",
+    "cschleiden.vscode-github-actions",
+    "davidanson.vscode-markdownlint",
+    "editorconfig.editorconfig",
+    "esbenp.prettier-vscode",
+    "foxundermoon.shell-format",
+    "github.vscode-pull-request-github",
+    "gruntfuggly.todo-tree",
+    "guyutongxue.cpp-reference",
+    "hbenl.vscode-test-explorer",
+    "lacroixdavid1.vscode-format-context-menu",
+    "me-dutour-mathieu.vscode-github-actions",
+    "mindaro-dev.file-downloader",
+    "ms-azuretools.vscode-docker",
+    "ms-vscode.cpptools",
+    "mutantdino.resourcemonitor",
+    "natqe.reload",
+    "nhoizey.gremlins",
+    "redhat.vscode-yaml",
+    "richie5um2.vscode-sort-json",
+    "spmeesseman.vscode-taskexplorer",
+    "spywhere.guides",
+    "streetsidesoftware.code-spell-checker",
+    "streetsidesoftware.code-spell-checker-medical-terms",
+    "streetsidesoftware.code-spell-checker-portuguese",
+    "tyriar.sort-lines",
+    "visualstudioexptteam.vscodeintellicode",
+    "yzhang.markdown-all-in-one",
+    "wdhongtw.gpg-indicator"
+  ],
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  "forwardPorts": [
+    8088
+  ],
+  // Use 'postCreateCommand' to run commands after the container is created.
+  "postCreateCommand": "uname -a",
+  // Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+  "remoteUser": "docker",
+  // "containerUser": "docker",
+  "shutdownAction": "stopContainer",
+  "postStartCommand": "echo postStartCommand",
+  "postAttachCommand": "echo postAttachCommand"
+}
