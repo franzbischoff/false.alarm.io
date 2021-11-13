@@ -17,6 +17,15 @@
   ],
   // Set *default* container specific settings.json values on container create.
   "settings": {
+    "python.formatting.provider": "black",
+    "python.languageServer": "Pylance",
+    "python.linting.pylintEnabled": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "files.trimTrailingWhitespace": true,
+    "platformio-ide.disablePIOHomeStartup": true,
+    "platformio-ide.activateOnlyOnPlatformIOProject": false,
+    "platformio-ide.pioHomeServerHttpPort": 8088,
     "cSpell.allowCompoundWords": true,
     "cSpell.ignorePaths": [
       "**/package-lock.json",
@@ -76,10 +85,6 @@
     "visualstudioexptteam.vscodeintellicode",
     "yzhang.markdown-all-in-one",
     "wdhongtw.gpg-indicator"
-  ],
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  "forwardPorts": [
-    8088
   ],
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": "uname -a",

@@ -9,16 +9,19 @@ ARG BUILD_DATE="2021-11-10"
 ARG BUILD_REPOSITORY="franzbischoff/false.alarm.io"
 ARG HOME="/home/docker"
 
-ENV DEBIAN_FRONTEND noninteractive
+ARG DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -qq \
-  && apt-get dist-upgrade -y
+  && apt-get dist-upgrade -y && \
+  apt-get install -y software-properties-common
 
-RUN add-apt-repository ppa:apt-fast/stable && apt-get update && apt-get install -y apt-fast
+# RUN add-apt-repository ppa:apt-fast/stable && apt-get update && apt-get install -y apt-fast
 
 # Install base packages
-RUN apt-fast update && apt-fast install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
+  sudo \
+  vim \
   git \
   curl \
   libgit2-dev \
@@ -26,6 +29,7 @@ RUN apt-fast update && apt-fast install -y --no-install-recommends \
   libssl-dev \
   libxml2-dev \
   libzmq3-dev\
+  gpg \
   gpg-agent \
   expect \
   zsh \
@@ -34,7 +38,8 @@ RUN apt-fast update && apt-fast install -y --no-install-recommends \
   mlocate \
   && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -ms /bin/zsh docker -p docker && \
+RUN useradd -p '' docker && \
+  usermod --shell /bin/zsh docker && \
   usermod -aG sudo docker
 
 COPY .zshrc ${HOME}/.zshrc
