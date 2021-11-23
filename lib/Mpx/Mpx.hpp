@@ -1,27 +1,31 @@
 #ifndef Mpx_h
 #define Mpx_h
 
-#define USE_STL2
-
-#ifdef USE_STL
-#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
-#include <ArduinoSTL.h>
-#include <vector>
-#include <numeric>
-#else
+#if defined(USE_STL)
+#if defined(RASPBERRYPI)
 #include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
+#elif defined(ESP32_IDF_DEV)
+#include <stdint.h>
+#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
+#include <ArduinoSTL.h>
+#include <vector>
+#include <numeric>
+#else
+#include <stdint.h>
 #endif // ARDUINO_ARCH_AVR
 #else
-#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
-#include <Arduino.h>
-#elif RASPBERRYPI2
+#if defined(RASPBERRYPI)
 #include <stdio.h>
 #include <stdint.h>
 #include <memory>
 #include <cmath>
+#elif defined(ESP32_IDF_DEV)
+#include <stdint.h>
+#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
+#include <Arduino.h>
 #else
 #include <stdint.h>
 #include <memory>
@@ -29,16 +33,20 @@
 #endif // ARDUINO_ARCH_AVR
 #endif // USE_STL
 
-#ifndef MIN
+#if !defined(NULL)
+#define NULL 0
+#endif
+
+#if !defined(MIN)
 #define MIN(y, x) ((x) < (y) && (x) == (x) ? (x) : (y))
 #endif
-#ifndef MAX
+#if !defined(MAX)
 #define MAX(y, x) ((x) > (y) && (x) == (x) ? (x) : (y))
 #endif
 
 namespace MatrixProfile {
 
-#ifdef USE_STL
+#if defined(USE_STL)
 typedef struct ogita {
   std::vector<float> avg;
   std::vector<float> sig;
@@ -58,8 +66,8 @@ public:
   std::vector<float> Ddf_s();
   std::vector<float> Ddg_s();
   std::vector<float> Ww_s();
-  std::vector<float> get_matrix() { return _matrix_profile; };
-  std::vector<int> get_indexes() { return _profile_index; };
+  std::vector<float> get_matrix() { return _vmatrix_profile; };
+  std::vector<int> get_indexes() { return _vprofile_index; };
 
 private:
   uint32_t _profile_len;
@@ -70,11 +78,11 @@ private:
   uint16_t _exclusion_zone;
   float _ez;
   uint16_t _mp_time_constraint;
-  std::vector<float> _mmu;
-  std::vector<float> _sig;
-  std::vector<float> _data;
-  std::vector<float> _matrix_profile;
-  std::vector<int> _profile_index;
+  std::vector<float> _vmmu;
+  std::vector<float> _vsig;
+  std::vector<float> _vdata;
+  std::vector<float> _vmatrix_profile;
+  std::vector<int> _vprofile_index;
 };
 #else
 class Mpx {
@@ -92,17 +100,25 @@ public:
   void Ddg_s();
   void Ww_s();
 
+  void ComputeStream2();
+  float get_ddf(uint32_t idx);
+  float get_ddg(uint32_t idx);
+  float get_ww(uint32_t idx);
+  float get_sig(uint32_t idx);
+  float get_mu(uint32_t idx);
+
   // Getters
-  float *get_ww() { return _ww; };
-  float *get_ddf() { return _ddf; };
-  float *get_ddg() { return _ddg; };
-  float *get_mmu() { return _mmu; };
-  float *get_sig() { return _sig; };
-  float *get_matrix() { return _matrix_profile; };
-  int16_t *get_indexes() { return _profile_index; };
+  // float *get_ww() { return _vww; };
+  // float *get_ddf() { return _vddf; };
+  // float *get_ddg() { return _vddg; };
+  // float *get_mmu() { return _vmmu; };
+  // float *get_sig() { return _vsig; };
+  float *get_matrix() { return _vmatrix_profile; };
+  int16_t *get_indexes() { return _vprofile_index; };
 
 private:
   uint32_t _profile_len;
+  uint32_t _range;
   uint32_t _data_len;
   uint32_t _diag_start;
   uint32_t _diag_end;
@@ -116,14 +132,14 @@ private:
   float *_mov2sum = NULL;
 
   // arrays
-  float *_ww = NULL;
-  float *_ddf = NULL;
-  float *_ddg = NULL;
-  float *_mmu = NULL;
-  float *_sig = NULL;
-  float *_matrix_profile = NULL;
-  int16_t *_profile_index = NULL;
-  float *_data = NULL;
+  float *_vww = NULL;
+  float *_vddf = NULL;
+  float *_vddg = NULL;
+  float *_vmmu = NULL;
+  float *_vsig = NULL;
+  float *_vmatrix_profile = NULL;
+  int16_t *_vprofile_index = NULL;
+  float *_vdata = NULL;
 };
 
 #endif // USE_STL

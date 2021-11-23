@@ -1,0 +1,15 @@
+{
+  "build": {
+    "f_cpu": "1200000000L"
+  },
+  "name": "windows_native",
+  "frameworks": [
+    "windows_native"
+  ],
+  "upload": {
+    "maximum_ram_size": 536870912,
+    "maximum_size": 536870912
+  },
+  "url": "https://github.com/platformio/platform-native.git",
+  "vendor": "Platformio"
+}

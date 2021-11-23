@@ -1,0 +1,28 @@
+{
+  "name": "MPX",
+  "version": "1.0.0",
+  "description": "Library for computing streaming matrix profile",
+  "keywords": "matrixprofile, mpx, timeseries",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/franzbischoff/false.alarm.io.git"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/franzbischoff/false.alarm.io.git",
+  "frameworks": [
+    "espidf",
+    "arduino"
+  ],
+  "platforms": [
+    "native",
+    "atmelavr",
+    "espressif32",
+    "linux_x86_64",
+    "linux_native"
+  ],
+  "headers": "Mpx.hpp",
+  "build": {
+    "unflags": "-std=gnu++11",
+    "flags": "-std=c++11"
+  }
+}
