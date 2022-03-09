@@ -92,7 +92,7 @@ public:
       uint16_t mp_time_constraint = 0, uint16_t history = 5000);
   ~Mpx(); // destructor
   // void Compute();
-  void ComputeStream();
+  void ComputeStream(uint16_t data_len);
   void movsum();
   void mov2sum();
   void muinvn();
@@ -103,6 +103,8 @@ public:
   void ComputeStream2();
   float get_ddf(uint32_t idx);
   float get_ddg(uint32_t idx);
+  inline float get_ddf2(uint32_t idx);
+  inline float get_ddg2(uint32_t idx);
   float get_ww(uint32_t idx);
   float get_sig(uint32_t idx);
   float get_mu(uint32_t idx);
@@ -132,11 +134,11 @@ private:
   float *_mov2sum = NULL;
 
   // arrays
-  float *_vww = NULL;
   float *_vddf = NULL;
   float *_vddg = NULL;
   float *_vmmu = NULL;
   float *_vsig = NULL;
+  float *_vww = NULL;
   float *_vmatrix_profile = NULL;
   int16_t *_vprofile_index = NULL;
   float *_vdata = NULL;

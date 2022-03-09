@@ -264,11 +264,11 @@ Mpx::Mpx(float *data, uint32_t debug_data_size, uint16_t window_size, float ez, 
     this->_vprofile_index[i] = -1;
   }
 
-  // this->_vmmu = (float *)calloc(_profile_len + 1, sizeof(float));
-  // this->_vsig = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vddf = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vddg = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vww = (float *)calloc(_window_size + 1, sizeof(float));
+  this->_vmmu = (float *)calloc(_profile_len + 1, sizeof(float));
+  this->_vsig = (float *)calloc(_profile_len + 1, sizeof(float));
+  // this->_vddf = (float *)calloc(_profile_len + 1, sizeof(float));
+  // this->_vddg = (float *)calloc(_profile_len + 1, sizeof(float));
+  // this->_vww = (float *)calloc(_window_size + 1, sizeof(float));
 
   if (_mp_time_constraint > 0) {
     _diag_end = _mp_time_constraint;
@@ -354,7 +354,6 @@ void Mpx::Ddf_s() {
   // differentials have 0 as their first entry. This simplifies index
   // calculations slightly and allows us to avoid special "first line"
   // handling.
-
   for (uint32_t i = 0; i < _range; i++) {
     this->_vddf[i] = 0.5 * (this->_vdata[i] - this->_vdata[i + this->_window_size]);
   }
@@ -380,61 +379,22 @@ void Mpx::Ww_s() {
   }
 }
 
-void Mpx::ComputeStream() {
-  uint16_t new_data_len = _data_len - _window_size * 2; // incoming data
-
-  // if (mp_time_constraint > 0) {
-  //   diag_start = _data_len - mp_time_constraint - _window_size;
-  // }
-
-  this->_diag_start = 0;
-  this->_diag_end = this->_profile_len - this->_exclusion_zone;
-
-  movsum();
-  mov2sum();
-  muinvn();
-
-  Ddf_s();
-  Ddg_s();
-  Ww_s();
-
-  for (uint32_t i = _diag_start; i < _diag_end; i++) {
-    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
-    float c = 0.0;
-
-    // inner product demeaned
-    for (uint32_t j = 0; j < _window_size; j++) {
-      c += (_vdata[i + j] - _vmmu[i]) * _vww[j];
-    }
-
-    uint32_t off_min = MAX(_range - new_data_len, _range - i - 1);
-    uint32_t off_start = _range;
-
-    // loop if more than 1 new data
-    for (uint32_t offset = off_start; offset > off_min; offset--) {
-      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint32_t off_diag = offset - (_range - i);
-
-      c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
-      float c_cmp = c * _vsig[offset] * _vsig[off_diag];
-
-      // RMP
-      if (c_cmp > _vmatrix_profile[off_diag]) {
-        _vmatrix_profile[off_diag] = c_cmp;
-        _vprofile_index[off_diag] = offset + 1;
-      }
-    }
+inline float Mpx::get_ddg2(uint32_t idx) {
+  float res = 0.0;
+  if (idx < _range) {
+    res = (this->_vdata[idx + this->_window_size] - this->_vmmu[idx + 1]) + (this->_vdata[idx] - this->_vmmu[idx]);
   }
+
+  return res;
 }
 
-float Mpx::get_ddf(uint32_t idx) {
+inline float Mpx::get_ddf2(uint32_t idx) {
+  float res = 0.0;
   if (idx < _range) {
-    if (this->_vddf[idx] == 0.0)
-      this->_vddf[idx] = 0.5 * (this->_vdata[idx] - this->_vdata[idx + this->_window_size]);
-    return this->_vddf[idx];
+    res = 0.5 * (this->_vdata[idx] - this->_vdata[idx + this->_window_size]);
   }
 
-  return 0.0;
+  return res;
 }
 
 float Mpx::get_ddg(uint32_t idx) {
@@ -442,6 +402,16 @@ float Mpx::get_ddg(uint32_t idx) {
     if (this->_vddg[idx] == 0.0)
       this->_vddg[idx] = (this->_vdata[idx + this->_window_size] - get_mu(idx + 1)) + (this->_vdata[idx] - get_mu(idx));
     return this->_vddg[idx];
+  }
+
+  return 0.0;
+}
+
+float Mpx::get_ddf(uint32_t idx) {
+  if (idx < _range) {
+    if (this->_vddf[idx] == 0.0)
+      this->_vddf[idx] = 0.5 * (this->_vdata[idx] - this->_vdata[idx + this->_window_size]);
+    return this->_vddf[idx];
   }
 
   return 0.0;
@@ -480,6 +450,58 @@ float Mpx::get_ww(uint32_t idx) {
   }
 
   return 0.0;
+}
+
+void Mpx::ComputeStream(uint16_t data_len) {
+  uint16_t new_data_len = data_len - _window_size * 2; // incoming data
+
+  // if (mp_time_constraint > 0) {
+  //   diag_start = _data_len - mp_time_constraint - _window_size;
+  // }
+
+  this->_diag_start = 0;
+  this->_diag_end = this->_profile_len - this->_exclusion_zone;
+
+  if(data_len == _data_len) {
+    movsum();
+    mov2sum();
+    muinvn();
+  }
+
+  float vww[_window_size];
+
+  for (uint32_t i = 0; i < _window_size; i++) {
+    vww[i] = (this->_vdata[_range + i] - this->_vmmu[_range]);
+  }
+
+  for (uint32_t i = _diag_start; i < _diag_end; i++) {
+    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
+    float c = 0.0;
+
+    // inner product demeaned
+    for (uint32_t j = 0; j < _window_size; j++) {
+      c += (_vdata[i + j] - _vmmu[i]) * vww[j];
+    }
+
+    uint32_t off_min = MAX(_range - new_data_len, _range - i - 1);
+    uint32_t off_start = _range;
+
+    // loop if more than 1 new data
+    for (uint32_t offset = off_start; offset > off_min; offset--) {
+      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
+      uint32_t off_diag = offset - (_range - i);
+      c += get_ddf2(offset) * get_ddg2(off_diag) + get_ddf2(off_diag) * get_ddg2(offset);
+      float c_cmp = c * _vsig[offset] * _vsig[off_diag];
+
+      // return;
+
+      // RMP
+      if (c_cmp > _vmatrix_profile[off_diag]) {
+        _vmatrix_profile[off_diag] = c_cmp;
+        _vprofile_index[off_diag] = offset + 1;
+      }
+    }
+  }
 }
 
 void Mpx::ComputeStream2() {
@@ -532,11 +554,11 @@ void Mpx::ComputeStream2() {
 
 Mpx::~Mpx() {
   // free arrays
-  free(this->_vww);
-  free(this->_vddg);
-  free(this->_vddf);
-  // free(this->_vsig);
-  // free(this->_vmmu);
+  // free(this->_vww);
+  // free(this->_vddg);
+  // free(this->_vddf);
+  free(this->_vsig);
+  free(this->_vmmu);
   free(this->_vprofile_index);
   free(this->_vmatrix_profile);
   this->_vdata = NULL;

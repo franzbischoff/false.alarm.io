@@ -7,5 +7,8 @@
         "platformio.platformio-ide",
         "usernamehw.errorlens",
         "visualstudioexptteam.vscodeintellicode"
+    ],
+    "unwantedRecommendations": [
+        "ms-vscode.cpptools-extension-pack"
     ]
 }

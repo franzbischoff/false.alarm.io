@@ -1,17 +1,19 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
 // https://github.com/microsoft/vscode-dev-containers/tree/v0.188.0/containers/ubuntu
+// manual command: docker build -f Dockerfile -t franzbischoff/false.alarm.io:stable -t franzbischoff/false.alarm.io:latest -t franzbischoff/false.alarm.io:v2.1 --build-arg BUILD_DATE=${TODAY} --build-arg BUILD_VERSION=2.1 --build-arg CORE_VERSION=5.2.3 .
 {
-  "build": {
-    "args": {
-      "CORE_VERSION": "5.2.3",
-      "BUILD_NAME": "false.alarm.io dev",
-      "BUILD_DATE": "2021-11-23",
-      "BUILD_VERSION": "2"
-    },
-    "dockerfile": "Dockerfile"
-  },
+  // "build": {
+  //   "args": {
+  //     "CORE_VERSION": "5.2.3",
+  //     "BUILD_NAME": "false.alarm.io dev",
+  //     "BUILD_DATE": "2021-11-23",
+  //     "BUILD_VERSION": "2.1"
+  //   },
+  //   "dockerfile": "Dockerfile"
+  // },
+  "image": "franzbischoff/false.alarm.io:v2.1",
   "containerEnv": {
-    "WORKSPACE_DIRECTORY": "/workspace"
+    "WORKSPACE_DIRECTORY": "/workspace/false.alarm.io"
   },
   // Add the IDs of extensions you want installed when the container is created.
   "extensions": [
@@ -42,7 +44,7 @@
     "ms-azuretools.vscode-docker",
     "ms-python.python",
     "ms-python.vscode-pylance",
-    "ms-vscode.cpptools",
+    "ms-vscode.cpptools@1.7.1",
     "ms-vscode.hexeditor",
     "ms-vscode.test-adapter-converter",
     "mutantdino.resourcemonitor",
@@ -63,13 +65,14 @@
     "yzhang.markdown-all-in-one"
   ],
   "name": "false.alarm.io dev",
-  "postAttachCommand": "echo postAttachCommand",
+  // "postAttachCommand": "echo postAttachCommand",
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "uname -a",
-  "postStartCommand": "echo postStartCommand",
+  // "postCreateCommand": "echo postCreateCommand",
+  // "postStartCommand": "echo postStartCommand",
   // Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
   "remoteUser": "docker",
   "runArgs": [
+    "--name=embeded_mpx_dev",
     "-e",
     "GIT_EDITOR=code-insiders",
     "-e",
@@ -185,8 +188,8 @@
       "git-rebase-todo": "gitlens.rebase"
     }
   },
-  // "containerUser": "docker",
+  "containerUser": "docker",
   "shutdownAction": "stopContainer",
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
+  "workspaceFolder": "/workspace/false.alarm.io",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/false.alarm.io,type=bind,consistency=cached"
 }
