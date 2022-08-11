@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <memory>
 #include <cmath>
+#include <cstdio>
 #endif // ARDUINO_ARCH_AVR
 #endif // USE_STL
 
