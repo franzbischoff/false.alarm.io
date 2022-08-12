@@ -15,10 +15,7 @@
   ],
   "platforms": [
     "native",
-    "atmelavr",
-    "espressif32",
-    "linux_x86_64",
-    "linux_native"
+    "raspberrypi"
   ],
   "headers": "Mpx.hpp",
   "build": {

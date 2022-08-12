@@ -390,17 +390,41 @@ void Mpx::ComputeStream() {
   this->_diag_start = 0;
   this->_diag_end = this->_profile_len - this->_exclusion_zone;
 
+  uint16_t debug = 0;
+
+  Serial.println(debug++);
+
   movsum();
+
+  Serial.println(debug++);
+
   mov2sum();
-  muinvn();
+
+  Serial.println(debug++);
+
+  // muinvn();
+
+  Serial.println(debug++);
 
   Ddf_s();
+
+  Serial.println(debug++);
+
   Ddg_s();
+
+  Serial.println(debug++);
+
   Ww_s();
+
+  Serial.println(debug++);
 
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
     float c = 0.0;
+
+    if (!(i % 100)) {
+      Serial.println(i);
+    }
 
     // inner product demeaned
     for (uint32_t j = 0; j < _window_size; j++) {
@@ -499,9 +523,9 @@ void Mpx::ComputeStream2() {
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
 
-    // if (!(i % 100)) {
-    //   printf("%u\n", i);
-    // }
+    if (!(i % 100)) {
+      Serial.println(i);
+    }
 
     float c = 0.0;
 
