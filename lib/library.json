@@ -17,9 +17,12 @@
     "native",
     "raspberrypi"
   ],
-  "headers": "Mpx.hpp",
-  "build": {
-    "unflags": "-std=gnu++11",
-    "flags": "-std=c++11"
-  }
+  "headers": "Mpx.hpp"
+  // "build": {
+  //   "unflags": [
+  //     "-std=gnu++14",
+  //     "-std=gnu++11"
+  //   ],
+  //   "flags": "-std=c++11"
+  // }
 }

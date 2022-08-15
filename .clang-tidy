@@ -79,5 +79,5 @@ Checks: >-
   -misc-non-private-member-variables-in-classes, -misc-no-recursion, -misc-unused-parameters, -modernize-avoid-c-arrays, -modernize-avoid-bind, -modernize-concat-nested-namespaces, -modernize-return-braced-init-list, -modernize-use-auto, -modernize-use-default-member-init, -modernize-use-equals-default, -modernize-use-trailing-return-type, -modernize-use-nodiscard, -mpi-*, -objc-*, -readability-braces-around-statements, -readability-const-return-type,
   -readability-convert-member-functions-to-static, -readability-else-after-return, -readability-function-cognitive-complexity, -readability-implicit-bool-conversion, -readability-isolate-declaration, -readability-magic-numbers, -readability-make-member-function-const, -readability-named-parameter, -readability-qualified-auto, -readability-redundant-access-specifiers, -readability-redundant-member-init, -readability-redundant-string-init, -readability-uppercase-literal-suffix,
   -readability-use-anyofallof,
-FormatStyle: google
-WarningsAsErrors: "*"
+FormatStyle: llvm
+# WarningsAsErrors: "*"

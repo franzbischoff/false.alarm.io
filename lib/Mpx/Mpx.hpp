@@ -60,7 +60,7 @@ public:
   void Compute();
   void ComputeStream();
   std::vector<float> movsum(std::vector<float> data, uint32_t window_size);
-  void muinvn(const std::vector<float> data, uint32_t window_size, ogita_t &result);
+  void muinvn(const std::vector<float> &data, uint32_t window_size, ogita_t &result);
   std::vector<float> Ddf();
   std::vector<float> Ddg();
   std::vector<float> Ww();
@@ -89,7 +89,7 @@ private:
 class Mpx {
 public:
   // cppcheck-suppress noExplicitConstructor
-  Mpx(float *data, uint32_t debug_data_size = 100, uint16_t window_size = 200, float ez = 0.5,
+  Mpx(const float *data = nullptr, uint32_t debug_data_size = 100, uint16_t window_size = 200, float ez = 0.5,
       uint16_t mp_time_constraint = 0, uint16_t history = 5000);
   ~Mpx(); // destructor
   // void Compute();
@@ -118,29 +118,32 @@ public:
   int16_t *get_indexes() { return _vprofile_index; };
 
 private:
-  uint32_t _profile_len;
-  uint32_t _range;
+  const float *_vdata = nullptr;
   uint32_t _data_len;
-  uint32_t _diag_start;
-  uint32_t _diag_end;
   uint16_t _window_size;
-  uint16_t _exclusion_zone;
   float _ez;
   uint16_t _mp_time_constraint;
 
+  uint32_t _profile_len;
+  uint32_t _range;
+
+  uint32_t _diag_start;
+  uint32_t _diag_end;
+
+  uint16_t _exclusion_zone;
+
   // debug arrays
-  float *_movsum = NULL;
-  float *_mov2sum = NULL;
+  float *_movsum = nullptr;
+  float *_mov2sum = nullptr;
 
   // arrays
-  float *_vww = NULL;
-  float *_vddf = NULL;
-  float *_vddg = NULL;
-  float *_vmmu = NULL;
-  float *_vsig = NULL;
-  float *_vmatrix_profile = NULL;
-  int16_t *_vprofile_index = NULL;
-  float *_vdata = NULL;
+  float *_vww = nullptr;
+  float *_vddf = nullptr;
+  float *_vddg = nullptr;
+  float *_vmmu = nullptr;
+  float *_vsig = nullptr;
+  float *_vmatrix_profile = nullptr;
+  int16_t *_vprofile_index = nullptr;
 };
 
 #endif // USE_STL

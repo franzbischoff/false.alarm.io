@@ -9,7 +9,7 @@
     "f_flash": "40000000L",
     "flash_mode": "dio",
     "mcu": "esp32",
-    "variant": "doitESP32devkitV1"
+    "variant": "odroid_esp32"
   },
   "connectivity": [
     "wifi",
@@ -18,7 +18,7 @@
     "can"
   ],
   "debug": {
-    "openocd_board": "esp-wroom-32.cfg"
+    "openocd_target": "esp32.cfg"
   },
   "frameworks": [
     "arduino",

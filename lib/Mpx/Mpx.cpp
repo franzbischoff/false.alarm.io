@@ -1,3 +1,7 @@
+// This is a personal academic project. Dear PVS-Studio, please check it.
+
+// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
+
 #include "Mpx.hpp"
 
 namespace MatrixProfile {
@@ -237,27 +241,24 @@ std::vector<float> Mpx::Ww() {
   return ww;
 }
 #else
-Mpx::Mpx(float *data, uint32_t debug_data_size, uint16_t window_size, float ez, uint16_t mp_time_constraint,
-         uint16_t history) {
+Mpx::Mpx(const float *data, uint32_t debug_data_size, uint16_t window_size, float ez, uint16_t mp_time_constraint,
+         uint16_t history)
+    : _vdata(data), _data_len(debug_data_size), _window_size(window_size), _ez(ez),
+      _mp_time_constraint(mp_time_constraint), _profile_len(debug_data_size - window_size + 1), _range(debug_data_size - window_size), _diag_end(debug_data_size - window_size + 1),
+      _exclusion_zone(round(window_size * ez + __DBL_EPSILON__) + 1),
+      _movsum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
+      _mov2sum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
+      _vmatrix_profile((float *)malloc(sizeof(float) * debug_data_size - window_size + 1 + 1)),
+      _vprofile_index((int16_t *)malloc(sizeof(int16_t) * debug_data_size - window_size + 1 + 1)) {
 
-  this->_window_size = window_size;
-  this->_ez = ez;
-  this->_mp_time_constraint = mp_time_constraint;
-  this->_data_len = debug_data_size; // history
-  this->_profile_len = _data_len - window_size + 1;
-  this->_range = _data_len - window_size;
-  this->_exclusion_zone = round(window_size * ez + __DBL_EPSILON__) + 1;
+  // history
+
   this->_diag_start = _exclusion_zone;
-  this->_diag_end = _profile_len;
 
   // allocate debug arrays
-  this->_movsum = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_mov2sum = (float *)calloc(_profile_len + 1, sizeof(float));
 
   // allocate arrays
-  this->_vdata = data;
-  this->_vmatrix_profile = (float *)malloc(sizeof(float) * _profile_len + 1);
-  this->_vprofile_index = (int16_t *)malloc(sizeof(int16_t) * _profile_len + 1);
+
   // change the default value to -1
   for (uint32_t i = 0; i < _profile_len; i++) {
     this->_vmatrix_profile[i] = -1;
@@ -390,33 +391,14 @@ void Mpx::ComputeStream() {
   this->_diag_start = 0;
   this->_diag_end = this->_profile_len - this->_exclusion_zone;
 
-  uint16_t debug = 0;
-
-  Serial.println(debug++);
+  // uint16_t debug = 0;
 
   movsum();
-
-  Serial.println(debug++);
-
   mov2sum();
-
-  Serial.println(debug++);
-
-  // muinvn();
-
-  Serial.println(debug++);
-
+  muinvn();
   Ddf_s();
-
-  Serial.println(debug++);
-
   Ddg_s();
-
-  Serial.println(debug++);
-
   Ww_s();
-
-  Serial.println(debug++);
 
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
@@ -519,6 +501,9 @@ void Mpx::ComputeStream2() {
   movsum();
   mov2sum();
   // muinvn();
+  // Ddf_s();
+  // Ddg_s();
+  // Ww_s();
 
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
@@ -559,11 +544,11 @@ Mpx::~Mpx() {
   free(this->_vww);
   free(this->_vddg);
   free(this->_vddf);
-  // free(this->_vsig);
-  // free(this->_vmmu);
+  free(this->_vsig);
+  free(this->_vmmu);
   free(this->_vprofile_index);
   free(this->_vmatrix_profile);
-  this->_vdata = NULL;
+  this->_vdata = nullptr;
 
   // free debug arrays
   free(this->_movsum);
