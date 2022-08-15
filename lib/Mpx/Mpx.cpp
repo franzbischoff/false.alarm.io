@@ -255,18 +255,14 @@ Mpx::Mpx(const float *data, uint32_t debug_data_size, uint16_t window_size, floa
 
   this->_diag_start = _exclusion_zone;
 
-  // allocate debug arrays
-
-  // allocate arrays
-
   // change the default value to -1
   for (uint32_t i = 0; i < _profile_len; i++) {
     this->_vmatrix_profile[i] = -1;
     this->_vprofile_index[i] = -1;
   }
 
-  // this->_vmmu = (float *)calloc(_profile_len + 1, sizeof(float));
-  // this->_vsig = (float *)calloc(_profile_len + 1, sizeof(float));
+  this->_vmmu = (float *)calloc(_profile_len + 1, sizeof(float));
+  this->_vsig = (float *)calloc(_profile_len + 1, sizeof(float));
   this->_vddf = (float *)calloc(_profile_len + 1, sizeof(float));
   this->_vddg = (float *)calloc(_profile_len + 1, sizeof(float));
   this->_vww = (float *)calloc(_window_size + 1, sizeof(float));
@@ -391,8 +387,6 @@ void Mpx::ComputeStream() {
   this->_diag_start = 0;
   this->_diag_end = this->_profile_len - this->_exclusion_zone;
 
-  // uint16_t debug = 0;
-
   movsum();
   mov2sum();
   muinvn();
@@ -402,11 +396,18 @@ void Mpx::ComputeStream() {
 
   for (uint32_t i = _diag_start; i < _diag_end; i++) {
     // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
-    float c = 0.0;
 
+#if defined(ARDUINO_ESP32_DEV)
     if (!(i % 100)) {
       Serial.println(i);
     }
+#else
+    if (!(i % 100)) {
+      printf("%u\n", i);
+    }
+#endif
+
+    float c = 0.0;
 
     // inner product demeaned
     for (uint32_t j = 0; j < _window_size; j++) {
@@ -423,112 +424,6 @@ void Mpx::ComputeStream() {
 
       c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
       float c_cmp = c * _vsig[offset] * _vsig[off_diag];
-
-      // RMP
-      if (c_cmp > _vmatrix_profile[off_diag]) {
-        _vmatrix_profile[off_diag] = c_cmp;
-        _vprofile_index[off_diag] = offset + 1;
-      }
-    }
-  }
-}
-
-float Mpx::get_ddf(uint32_t idx) {
-  if (idx < _range) {
-    if (this->_vddf[idx] == 0.0)
-      this->_vddf[idx] = 0.5 * (this->_vdata[idx] - this->_vdata[idx + this->_window_size]);
-    return this->_vddf[idx];
-  }
-
-  return 0.0;
-}
-
-float Mpx::get_ddg(uint32_t idx) {
-  if (idx < _range) {
-    if (this->_vddg[idx] == 0.0)
-      this->_vddg[idx] = (this->_vdata[idx + this->_window_size] - get_mu(idx + 1)) + (this->_vdata[idx] - get_mu(idx));
-    return this->_vddg[idx];
-  }
-
-  return 0.0;
-}
-
-float Mpx::get_sig(uint32_t idx) {
-  if (idx < _profile_len) {
-    // if (this->_vsig[idx] == 0.0)
-    //   this->_vsig[idx] =
-    //       1 / sqrt(this->_mov2sum[idx] - this->_movsum[idx] * this->_movsum[idx] / (float)this->_window_size);
-    // return this->_vsig[idx];
-
-    return (1 / sqrt(this->_mov2sum[idx] - this->_movsum[idx] * this->_movsum[idx] / (float)this->_window_size));
-  }
-
-  return 0.0;
-}
-
-float Mpx::get_mu(uint32_t idx) {
-  if (idx < _profile_len) {
-    // if (this->_vmmu[idx] == 0.0)
-    //   this->_vmmu[idx] = (float)(this->_movsum[idx] / (float)this->_window_size);
-    // return this->_vmmu[idx];
-
-    return (float)(this->_movsum[idx] / (float)this->_window_size);
-  }
-
-  return 0.0;
-}
-
-float Mpx::get_ww(uint32_t idx) {
-  if (idx < _window_size) {
-    if (this->_vww[idx] == 0.0)
-      this->_vww[idx] = (this->_vdata[_range + idx] - get_mu(_range));
-    return this->_vww[idx];
-  }
-
-  return 0.0;
-}
-
-void Mpx::ComputeStream2() {
-  uint16_t new_data_len = _data_len - _window_size * 2; // incoming data
-
-  // if (mp_time_constraint > 0) {
-  //   diag_start = _data_len - mp_time_constraint - _window_size;
-  // }
-
-  this->_diag_start = 0;
-  this->_diag_end = this->_profile_len - this->_exclusion_zone;
-
-  movsum();
-  mov2sum();
-  // muinvn();
-  // Ddf_s();
-  // Ddg_s();
-  // Ww_s();
-
-  for (uint32_t i = _diag_start; i < _diag_end; i++) {
-    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
-
-    if (!(i % 100)) {
-      Serial.println(i);
-    }
-
-    float c = 0.0;
-
-    // inner product demeaned
-    for (uint32_t j = 0; j < _window_size; j++) {
-      c += (_vdata[i + j] - get_mu(i)) * get_ww(j);
-    }
-
-    uint32_t off_min = MAX(_range - new_data_len, _range - i - 1);
-    uint32_t off_start = _range;
-
-    // loop if more than 1 new data
-    for (uint32_t offset = off_start; offset > off_min; offset--) {
-      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint32_t off_diag = offset - (_range - i);
-
-      c += get_ddf(offset) * get_ddg(off_diag) + get_ddf(off_diag) * get_ddg(offset);
-      float c_cmp = c * get_sig(offset) * get_sig(off_diag);
 
       // RMP
       if (c_cmp > _vmatrix_profile[off_diag]) {

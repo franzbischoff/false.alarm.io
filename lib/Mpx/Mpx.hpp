@@ -2,36 +2,32 @@
 #define Mpx_h
 
 #if defined(USE_STL)
-#if defined(RASPBERRYPI)
-#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#elif defined(ESP32_IDF_DEV)
-#include <stdint.h>
-#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
-#include <ArduinoSTL.h>
-#include <vector>
-#include <numeric>
+  #if defined(RASPBERRYPI)
+    #include <iostream>
+    #include <vector>
+    #include <string>
+    #include <algorithm>
+  #elif defined(ARDUINO_ESP32_DEV)
+    #include <ArduinoSTL.h>
+    #include <vector>
+    #include <numeric>
+  #else
+   #include <stdint.h>
+  #endif
 #else
-#include <stdint.h>
-#endif // ARDUINO_ARCH_AVR
-#else
-#if defined(RASPBERRYPI)
-#include <stdio.h>
-#include <stdint.h>
-#include <memory>
-#include <cmath>
-#elif defined(ESP32_IDF_DEV)
-#include <stdint.h>
-#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
-#include <Arduino.h>
-#else
-#include <stdint.h>
-#include <memory>
-#include <cmath>
-#include <cstdio>
-#endif // ARDUINO_ARCH_AVR
+  #if defined(RASPBERRYPI)
+    #include <stdio.h>
+    #include <stdint.h>
+    #include <memory>
+    #include <cmath>
+  #elif defined(ARDUINO_ESP32_DEV)
+   #include <Arduino.h>
+  #else
+    #include <stdint.h>
+    #include <memory>
+    #include <cmath>
+    #include <cstdio>
+  #endif
 #endif // USE_STL
 
 #if !defined(NULL)

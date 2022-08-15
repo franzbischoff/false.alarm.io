@@ -2,12 +2,11 @@
 
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 
-#if defined(ESP32_IDF_DEV)
+#if defined(RASPBERRYPI)
 #include <Mpx.hpp>
-#elif defined(RASPBERRYPI)
 #include <stdio.h>
 // #include <wiringPi.h>
-#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
+#elif defined(ARDUINO_ESP32_DEV)
 #include <Arduino.h>
 #include <Mpx.hpp>
 // #include "avr8-stub.h"
@@ -15,9 +14,9 @@
 // #include <unity.h>
 #else
 #include <Mpx.hpp>
-#include <chrono>
+// #include <chrono>
 #include <iostream>
-#endif // ARDUINO_ARCH_AVR
+#endif
 
 // #ifdef USE_STL
 // std::vector<float> TEST_DATA = {
@@ -642,49 +641,9 @@ const float TEST_DATA[] = {
     42.42, 42.71, 80.19, 3.88,  38.81, 80.11, 28.13, 31.69, 29.31, 97.22, 78.79, 25.01, 36.73, 12.52, 80.24, 17.95,
     87.75, 96.40, 91.93, 22.08, 31.38, 94.84, 17.10, 46.22, 5.18,  80.72, 18.91, 42.84, 88.48, 20.10, 97.17, 53.87,
     18.40, 94.31, 3.36,  40.19, 76.92, 57.16, 13.82, 63.26};
-#endif // USE_SHORT
-// float mp[4900];
-// int16_t pi[4900];
-// float mu[4900];
-// float si[4900];
-// float df[4900];
-// float dg[4900];
-// float www[300];
+#endif
 
-#if defined(ESP32_IDF_DEV)
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/gpio.h"
-#include "sdkconfig.h"
-
-/* Can run 'make menuconfig' to choose the GPIO to blink,
-   or you can edit the following line and set a number here.
-*/
-#define BLINK_GPIO CONFIG_BLINK_GPIO
-
-void blink_task(void *pvParameter) {
-  /* Configure the IOMUX register for pad BLINK_GPIO (some pads are
-     muxed to GPIO on reset already, but some default to other
-     functions and need to be switched to GPIO. Consult the
-     Technical Reference for a list of pads and their default
-     functions.)
-  */
-  gpio_pad_select_gpio(BLINK_GPIO);
-  /* Set the GPIO as a push/pull output */
-  gpio_set_direction((gpio_num_t)BLINK_GPIO, GPIO_MODE_OUTPUT);
-  while (1) {
-    /* Blink off (output low) */
-    gpio_set_level((gpio_num_t)BLINK_GPIO, 0);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    /* Blink on (output high) */
-    gpio_set_level((gpio_num_t)BLINK_GPIO, 1);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-  }
-}
-
-void app_main() { xTaskCreate(&blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 5, NULL); }
-#elif defined(RASPBERRYPI)
+#if defined(RASPBERRYPI)
 int done = 0;
 // cppcheck-suppress unusedFunction
 void setup() {
@@ -721,11 +680,10 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-#elif defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ESP32_DEV)
-// #define LED_BUILTIN 2
+#elif defined(ARDUINO_ESP32_DEV)
+
 // cppcheck-suppress unusedFunction
 void setup() {
-  // debug_init();
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
 }
@@ -744,7 +702,7 @@ void loop() {
   Serial.println(done);
 
   if (done == 0) {
-    mpx.ComputeStream2();
+    mpx.ComputeStream();
 
     digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
     delay(5000);                     // wait for a second
@@ -773,15 +731,19 @@ void loop() {
 #else
 int main(int argc, char **argv) {
 
-  auto start = std::chrono::system_clock::now();
+  // auto start = std::chrono::system_clock::now();
 
   std::cout << "Tick" << std::endl;
 
-  // for (uint32_t i = 0; i < 50000; i++) {
-  MatrixProfile::Mpx MPX(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
-  MPX.ComputeStream2();
+  static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
+
+  // for (uint32_t i = 0; i < 20; i++) {
+  //   _sleep(1000);
+    mpx.ComputeStream();
   // }
-  float *res = MPX.get_matrix();
+
+
+  float *res = mpx.get_matrix();
   float sum = 0;
 
   for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
@@ -799,9 +761,9 @@ int main(int argc, char **argv) {
   //   mpx2.ComputeStream2();
   // }
 
-  auto end = std::chrono::system_clock::now();
-  std::chrono::duration<double> diff2 = end - start;
-  std::cout << "Done " << diff2.count() << std::endl;
+  // auto end = std::chrono::system_clock::now();
+  // std::chrono::duration<double> diff2 = end - start;
+  // std::cout << "Done " << diff2.count() << " secondas" << std::endl;
 
   // mpx2.ComputeStream2();
 
@@ -833,6 +795,6 @@ int main(int argc, char **argv) {
   // }
   // printf("\n");
 
-  return 0;
+    return 0;
 }
 #endif // ARDUINO_ARCH_AVR
