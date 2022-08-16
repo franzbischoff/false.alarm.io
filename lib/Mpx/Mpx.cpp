@@ -4,6 +4,8 @@
 
 #include "Mpx.hpp"
 
+#include <cmath>
+
 namespace MatrixProfile {
 
 #if defined(USE_STL)
@@ -244,14 +246,14 @@ std::vector<float> Mpx::Ww() {
 Mpx::Mpx(const float *data, uint32_t debug_data_size, uint16_t window_size, float ez, uint16_t mp_time_constraint,
          uint16_t history)
     : _vdata(data), _data_len(debug_data_size), _window_size(window_size), _ez(ez),
-      _mp_time_constraint(mp_time_constraint), _profile_len(debug_data_size - window_size + 1), _range(debug_data_size - window_size), _diag_end(debug_data_size - window_size + 1),
+      _mp_time_constraint(mp_time_constraint), _profile_len(debug_data_size - window_size + 1),
+      _range(debug_data_size - window_size), _diag_end(debug_data_size - window_size + 1),
       _exclusion_zone(round(window_size * ez + __DBL_EPSILON__) + 1),
       _movsum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
       _mov2sum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
       _vmatrix_profile((float *)malloc(sizeof(float) * debug_data_size - window_size + 1 + 1)),
       _vprofile_index((int16_t *)malloc(sizeof(int16_t) * debug_data_size - window_size + 1 + 1)) {
-
-  // history
+  // assigning variables here saves some memory that allows ESP32 to work
 
   this->_diag_start = _exclusion_zone;
 
@@ -278,10 +280,10 @@ void Mpx::movsum() {
   double resid = 0.0;
 
   for (uint16_t i = 1; i < this->_window_size; i++) {
-    double m = this->_vdata[i];
-    double p = accum;
+    double const m = this->_vdata[i];
+    double const p = accum;
     accum = accum + m;
-    double q = accum - p;
+    double const q = accum - p;
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
@@ -292,13 +294,13 @@ void Mpx::movsum() {
   this->_movsum[0] = accum + resid;
 
   for (uint32_t i = this->_window_size; i < this->_data_len; i++) {
-    double m = this->_vdata[i - this->_window_size];
-    double n = this->_vdata[i];
-    double p = accum - m;
-    double q = p - accum;
-    double r = resid + ((accum - (p - q)) - (m + q));
+    double const m = this->_vdata[i - this->_window_size];
+    double const n = this->_vdata[i];
+    double const p = accum - m;
+    double const q = p - accum;
+    double const r = resid + ((accum - (p - q)) - (m + q));
     accum = p + n;
-    double t = accum - p;
+    double const t = accum - p;
     resid = r + ((p - (accum - t)) + (n - t));
     this->_movsum[i - this->_window_size + 1] = accum + resid;
   }
@@ -310,10 +312,10 @@ void Mpx::mov2sum() {
   double resid = 0.0;
 
   for (uint16_t i = 1; i < this->_window_size; i++) {
-    double m = this->_vdata[i] * this->_vdata[i];
-    double p = accum;
+    double const m = this->_vdata[i] * this->_vdata[i];
+    double const p = accum;
     accum = accum + m;
-    double q = accum - p;
+    double const q = accum - p;
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
@@ -324,13 +326,13 @@ void Mpx::mov2sum() {
   this->_mov2sum[0] = accum + resid;
 
   for (uint32_t i = this->_window_size; i < this->_data_len; i++) {
-    double m = this->_vdata[i - this->_window_size] * this->_vdata[i - this->_window_size];
-    double n = this->_vdata[i] * this->_vdata[i];
-    double p = accum - m;
-    double q = p - accum;
-    double r = resid + ((accum - (p - q)) - (m + q));
+    double const m = this->_vdata[i - this->_window_size] * this->_vdata[i - this->_window_size];
+    double const n = this->_vdata[i] * this->_vdata[i];
+    double const p = accum - m;
+    double const q = p - accum;
+    double const r = resid + ((accum - (p - q)) - (m + q));
     accum = p + n;
-    double t = accum - p;
+    double const t = accum - p;
     resid = r + ((p - (accum - t)) + (n - t));
     this->_mov2sum[i - this->_window_size + 1] = accum + resid;
   }
@@ -342,8 +344,8 @@ void Mpx::muinvn() {
   }
 
   for (uint32_t i = 0; i < this->_profile_len; i++) {
-    // this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_vmmu[i] * this->_vmmu[i] * this->_window_size);
-    this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_movsum[i] * this->_movsum[i] / (float)this->_window_size);
+    this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_vmmu[i] * this->_vmmu[i] * this->_window_size);
+    // this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_movsum[i] * this->_movsum[i] / (float)this->_window_size);
   }
 }
 
@@ -378,7 +380,7 @@ void Mpx::Ww_s() {
 }
 
 void Mpx::ComputeStream() {
-  uint16_t new_data_len = _data_len - _window_size * 2; // incoming data
+  uint16_t const new_data_len = _data_len - _window_size * 2; // incoming data
 
   // if (mp_time_constraint > 0) {
   //   diag_start = _data_len - mp_time_constraint - _window_size;
@@ -390,6 +392,8 @@ void Mpx::ComputeStream() {
   movsum();
   mov2sum();
   muinvn();
+  // free(this->_movsum);
+  // free(this->_mov2sum);
   Ddf_s();
   Ddg_s();
   Ww_s();
@@ -414,16 +418,16 @@ void Mpx::ComputeStream() {
       c += (_vdata[i + j] - _vmmu[i]) * _vww[j];
     }
 
-    uint32_t off_min = MAX(_range - new_data_len, _range - i - 1);
-    uint32_t off_start = _range;
+    uint32_t const off_min = MAX(_range - new_data_len, _range - i - 1);
+    uint32_t const off_start = _range;
 
     // loop if more than 1 new data
     for (uint32_t offset = off_start; offset > off_min; offset--) {
       // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint32_t off_diag = offset - (_range - i);
+      uint32_t const off_diag = offset - (_range - i);
 
       c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
-      float c_cmp = c * _vsig[offset] * _vsig[off_diag];
+      float const c_cmp = c * _vsig[offset] * _vsig[off_diag];
 
       // RMP
       if (c_cmp > _vmatrix_profile[off_diag]) {

@@ -16,6 +16,7 @@
 #include <Mpx.hpp>
 // #include <chrono>
 #include <iostream>
+// #include "gperftools/malloc_extension.h"
 #endif
 
 // #ifdef USE_STL
@@ -737,10 +738,11 @@ int main(int argc, char **argv) {
 
   static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
 
-  // for (uint32_t i = 0; i < 20; i++) {
-  //   _sleep(1000);
+  // for (uint32_t i = 0; i < 200; i++) {
     mpx.ComputeStream();
   // }
+
+
 
 
   float *res = mpx.get_matrix();
@@ -751,6 +753,9 @@ int main(int argc, char **argv) {
   }
 
   std::cout << "Done " << sum << std::endl;
+
+  // mpx.~Mpx();
+  // MallocExtension::instance()->ReleaseFreeMemory();
 
   // auto step = std::chrono::system_clock::now();
   // std::chrono::duration<double> diff = step - start;

@@ -97,7 +97,7 @@ public:
   void Ddg_s();
   void Ww_s();
 
-  void ComputeStream2();
+  // void ComputeStream2();
   float get_ddf(uint32_t idx);
   float get_ddg(uint32_t idx);
   float get_ww(uint32_t idx);
