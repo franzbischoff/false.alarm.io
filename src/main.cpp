@@ -6,24 +6,22 @@
 #include <Mpx.hpp>
 #include <stdio.h>
 // #include <wiringPi.h>
-#elif defined(ARDUINO_ESP32_DEV)
+#elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
 #include <Arduino.h>
 #include <Mpx.hpp>
+#include <chrono>
 // #include "avr8-stub.h"
 // #include "app_api.h" // only needed with flash breakpoints
 // #include <unity.h>
 #else
 #include <Mpx.hpp>
-// #include <chrono>
+#include <chrono>
 #include <iostream>
-// #include "gperftools/malloc_extension.h"
 #endif
 
-// #ifdef USE_STL
-// std::vector<float> TEST_DATA = {
-// #else
-
-#ifdef USE_SHORT
+#ifdef USE_STL
+std::vector<float> TEST_DATA = {
+#elif USE_SHORT
 #define DATA_SIZE 4741
 #define WIN_SIZE 300
 float TEST_DATA[] = {
@@ -645,7 +643,7 @@ const float TEST_DATA[] = {
 #endif
 
 #if defined(RASPBERRYPI)
-int done = 0;
+    int done = 0;
 // cppcheck-suppress unusedFunction
 void setup() {
   // debug_init();
@@ -658,17 +656,17 @@ void loop() {
   if (done)
     return;
 
-  MPX.ComputeStream();
+  MPX.compute_stream();
   float *res = MPX.get_matrix();
 
-  for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-    Serial.printf("%.2f, ", (double)res[i]);
+  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+    Serial.printf("%.2f, ", (float)res[i]);
   }
   Serial.println();
 
   int16_t *idxs = MPX.get_indexes();
 
-  for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
     Serial.printf("%d, ", (int16_t)idxs[i]);
   }
   Serial.println();
@@ -677,16 +675,18 @@ void loop() {
 }
 
 int main(int argc, char **argv) {
-  MPX.ComputeStream();
+  MPX.compute_stream();
 
   return 0;
 }
-#elif defined(ARDUINO_ESP32_DEV)
+#elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
 
 // cppcheck-suppress unusedFunction
 void setup() {
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
+  // analogWriteFreq(1);
+  // analogReadResolution(2);
 }
 
 // cppcheck-suppress unusedFunction
@@ -696,14 +696,21 @@ void loop() {
   static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
 
   digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
-  delay(1000);                     // wait for a second
+  delay(5000);                     // wait for a second
   digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
   delay(1000);
 
-  Serial.println(done);
-
   if (done == 0) {
-    mpx.ComputeStream();
+
+    auto start = std::chrono::system_clock::now();
+
+    mpx.compute_stream();
+
+    auto end = std::chrono::system_clock::now();
+
+    std::chrono::duration<float> diff2 = end - start;
+
+    Serial.printf("%.2f seconds to compute\n", diff2.count());
 
     digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
     delay(5000);                     // wait for a second
@@ -716,17 +723,27 @@ void loop() {
     delay(1000);                     // wait for a second
     digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
 
-    for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+    start = std::chrono::system_clock::now();
+
+    for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
       sum += res[i];
     }
+
+    end = std::chrono::system_clock::now();
+
+    diff2 = end - start;
+
+    Serial.printf("%.2f seconds to sum up\n", diff2.count());
 
     digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
     delay(1000);                     // wait for a second
     digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
 
-    Serial.println(sum);
+    Serial.printf("MP sum is %.2f\n", sum);
     Serial.println();
     done = 1;
+  } else {
+    Serial.printf("%d ", done);
   }
 }
 #else
@@ -738,17 +755,14 @@ int main(int argc, char **argv) {
 
   static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
 
-  // for (uint32_t i = 0; i < 200; i++) {
-    mpx.ComputeStream();
+  // for (uint16_t i = 0; i < 200; i++) {
+  mpx.compute_stream();
   // }
-
-
-
 
   float *res = mpx.get_matrix();
   float sum = 0;
 
-  for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
     sum += res[i];
   }
 
@@ -758,48 +772,49 @@ int main(int argc, char **argv) {
   // MallocExtension::instance()->ReleaseFreeMemory();
 
   // auto step = std::chrono::system_clock::now();
-  // std::chrono::duration<double> diff = step - start;
+  // std::chrono::duration<float > diff = step - start;
   // std::cout << "Tock " << diff.count() << std::endl;
 
-  // for (uint32_t i = 0; i < 50000; i++) {
+  // for (uint16_t i = 0; i < 50000; i++) {
   //   MatrixProfile::Mpx mpx2(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
-  //   mpx2.ComputeStream2();
+  //   mpx2.compute_stream2();
   // }
 
   // auto end = std::chrono::system_clock::now();
-  // std::chrono::duration<double> diff2 = end - start;
+  // std::chrono::duration<float > diff2 = end - start;
   // std::cout << "Done " << diff2.count() << " secondas" << std::endl;
 
-  // mpx2.ComputeStream2();
+  // mpx2.compute_stream2();
 
   // float *res = MPX.get_matrix();
 
-  // for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-  //   printf("%.2f, ", (double)res[i]);
+  // for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  //   printf("%.2f, ", (float )res[i]);
   // }
   // printf("\n");
 
   // int16_t *idxs = MPX.get_indexes();
 
-  // for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  // for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
   //   printf("%d, ", (int16_t)idxs[i]);
   // }
   // printf("\n");
 
   // float *res2 = mpx2.get_matrix();
 
-  // for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-  //   printf("%.2f, ", (double)res[i] - res2[i]);
+  // for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  //   printf("%.2f, ", (float )res[i] - res2[i]);
   // }
   // printf("\n");
 
   // int16_t *idxs2 = mpx2.get_indexes();
 
-  // for (uint32_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
+  // for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
   //   printf("%d, ", (int16_t)idxs[i] - idxs2[i]);
   // }
   // printf("\n");
 
-    return 0;
+  return 0;
 }
 #endif // ARDUINO_ARCH_AVR
+

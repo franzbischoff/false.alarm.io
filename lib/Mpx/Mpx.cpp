@@ -5,426 +5,318 @@
 #include "Mpx.hpp"
 
 #include <cmath>
+#include <cstring>
 
 namespace MatrixProfile {
-
-#if defined(USE_STL)
-Mpx::Mpx(std::vector<float> data, uint32_t debug_data_size, uint16_t window_size, float ez, uint16_t mp_time_constraint,
-         uint16_t history) {
-  this->_vdata = data;
-  this->_window_size = window_size;
-  this->_ez = ez;
-  this->_mp_time_constraint = mp_time_constraint;
-  this->_data_len = data.size();
-  this->_profile_len = _data_len - window_size + 1;
-  this->_exclusion_zone = round(window_size * ez + __DBL_EPSILON__) + 1;
-  this->_diag_start = _exclusion_zone;
-  this->_diag_end = _profile_len;
-  this->_vmatrix_profile = std::vector<float>(_profile_len, -1);
-  this->_vprofile_index = std::vector<int>(_profile_len, -1);
-
-  if (_mp_time_constraint > 0) {
-    _diag_end = _mp_time_constraint;
-  }
-}
-
-void Mpx::Compute() {
-  float c, c_cmp;
-
-  ogita_t meansig;
-  muinvn(_vdata, _window_size, meansig);
-  _vmmu = meansig.avg;
-  _vsig = meansig.sig;
-
-  std::vector<float> df = Ddf();
-  std::vector<float> dg = Ddg();
-  std::vector<float> ww = Ww();
-
-  for (uint32_t i = _diag_start; i < _diag_end; i++) {
-    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
-    float m = _vmmu[i];
-    c = std::inner_product(_vdata.begin() + i, _vdata.begin() + (i + _window_size), ww.begin(), 0.0, std::plus<float>(),
-                           [m](float &x, float &y) { return ((x - m) * y); });
-
-    uint32_t off_max = (_data_len - _window_size - i + 1);
-
-    for (uint32_t offset = 0; offset < off_max; offset++) {
-      uint32_t off_diag = offset + i;
-      c = c + df[offset] * dg[off_diag] + df[off_diag] * dg[offset];
-      c_cmp = c * _vsig[offset] * _vsig[off_diag];
-
-      // RMP
-      if (c_cmp > _vmatrix_profile[offset]) {
-        _vmatrix_profile[offset] = c_cmp;
-        _vprofile_index[offset] = off_diag + 1;
-      }
-      // LMP
-      if (c_cmp > _vmatrix_profile[off_diag]) {
-        _vmatrix_profile[off_diag] = c_cmp;
-        _vprofile_index[off_diag] = offset + 1;
-      }
-    }
-  }
-}
-
-void Mpx::ComputeStream() {
-  float c, c_cmp;
-
-  uint16_t new_data_len = 80; // incoming data
-
-  this->_diag_start = 0;
-  this->_diag_end = this->_profile_len - this->_exclusion_zone;
-
-  ogita_t meansig;
-  muinvn(_vdata, _window_size, meansig);
-  _vmmu = meansig.avg;
-  _vsig = meansig.sig;
-
-  std::vector<float> df = Ddf_s();
-  std::vector<float> dg = Ddg_s();
-  std::vector<float> ww = Ww_s();
-
-  for (uint32_t i = _diag_start; i < _diag_end; i++) {
-    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
-    float m = _vmmu[i];
-    c = std::inner_product(_vdata.begin() + i, _vdata.begin() + (i + _window_size), ww.begin(), 0.0, std::plus<float>(),
-                           [m](float &x, float &y) { return ((x - m) * y); });
-
-    uint32_t off_min = MAX(_data_len - _window_size - new_data_len, _data_len - _window_size - i - 1);
-    uint32_t off_start = _data_len - _window_size;
-
-    for (uint32_t offset = off_start; offset > off_min; offset--) {
-      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint32_t off_diag = offset - (_data_len - _window_size - i);
-
-      c = c + df[offset] * dg[off_diag] + df[off_diag] * dg[offset];
-      c_cmp = c * _vsig[offset] * _vsig[off_diag];
-
-      // RMP
-      if (c_cmp > _vmatrix_profile[off_diag]) {
-        _vmatrix_profile[off_diag] = c_cmp;
-        _vprofile_index[off_diag] = offset + 1;
-      }
-    }
-  }
-}
-
-std::vector<float> Mpx::movsum(std::vector<float> data, uint32_t window_size) {
-
-  std::vector<float> res(data.size() - window_size + 1, 0);
-  double accum = data[0];
-  double resid = 0.0;
-
-  for (uint16_t i = 1; i < window_size; i++) {
-    double m = data[i];
-    double p = accum;
-    accum = accum + m;
-    double q = accum - p;
-    resid = resid + ((p - (accum - q)) + (m - q));
-  }
-
-  // if (resid > 0.001)
-  // {
-  //   std::cout << "Residual value is large. Some precision may be lost. res = " << resid << std::endl;
-  // }
-
-  res[0] = accum + resid;
-
-  for (uint32_t i = window_size; i < data.size(); i++) {
-    double m = data[i - window_size];
-    double n = data[i];
-    double p = accum - m;
-    double q = p - accum;
-    double r = resid + ((accum - (p - q)) - (m + q));
-    accum = p + n;
-    double t = accum - p;
-    resid = r + ((p - (accum - t)) + (n - t));
-    res[i - window_size + 1] = accum + resid;
-  }
-
-  return (res);
-}
-
-void Mpx::muinvn(const std::vector<float> data, uint32_t window_size, ogita_t &result) {
-  std::vector<float> mu = movsum(data, window_size);
-  std::transform(mu.begin(), mu.end(), mu.begin(), [window_size](float &c) { return c / (float)window_size; });
-  std::vector<float> data2(data);
-  std::transform(data2.begin(), data2.end(), data2.begin(), data2.begin(), std::multiplies<float>());
-  std::vector<float> data2_sum = movsum(data2, window_size);
-
-  std::vector<float> sig(data.size() - window_size + 1, 0);
-
-  for (uint32_t i = 0; i < sig.size(); i++) {
-    sig[i] = 1 / sqrt(data2_sum[i] - mu[i] * mu[i] * window_size);
-  }
-
-  result.avg = mu;
-  result.sig = sig;
-}
-
-std::vector<float> Mpx::Ddf_s() {
-  uint32_t range = this->_data_len - this->_window_size;
-  std::vector<float> ddf(range + 1, 0);
-
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
-
-  for (uint32_t i = 0; i < range; i++) {
-    ddf[i] = 0.5 * (this->_vdata[i] - this->_vdata[i + this->_window_size]);
-  }
-
-  return ddf;
-}
-
-std::vector<float> Mpx::Ddg_s() {
-  uint32_t range = this->_data_len - this->_window_size;
-  std::vector<float> ddg(range + 1, 0);
-
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
-
-  for (uint32_t i = 0; i < range; i++) {
-    ddg[i] = (this->_vdata[i + this->_window_size] - this->_vmmu[i + 1]) + (this->_vdata[i] - this->_vmmu[i]);
-  }
-
-  return ddg;
-}
-
-std::vector<float> Mpx::Ww_s() {
-  uint32_t range = this->_window_size;
-  std::vector<float> ww(range, 0);
-
-  for (uint32_t i = 0; i < range; i++) {
-    ww[i] =
-        (this->_vdata[this->_data_len - this->_window_size + i] - this->_vmmu[this->_data_len - this->_window_size]);
-  }
-  return ww;
-}
-
-std::vector<float> Mpx::Ddf() {
-  uint32_t range = this->_data_len - this->_window_size;
-  std::vector<float> ddf(range + 1, 0);
-
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
-
-  for (uint32_t i = 0; i < range; i++) {
-    ddf[i + 1] = 0.5 * (this->_vdata[i + this->_window_size] - this->_vdata[i]);
-  }
-
-  return ddf;
-}
-
-std::vector<float> Mpx::Ddg() {
-  uint32_t range = this->_data_len - this->_window_size;
-  std::vector<float> ddg(range + 1, 0);
-
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
-
-  for (uint32_t i = 0; i < range; i++) {
-    ddg[i + 1] = (this->_vdata[i + this->_window_size] - this->_vmmu[i + 1]) + (this->_vdata[i] - this->_vmmu[i]);
-  }
-
-  return ddg;
-}
-
-std::vector<float> Mpx::Ww() {
-  uint32_t range = this->_window_size;
-  std::vector<float> ww(range, 0);
-
-  for (uint32_t i = 0; i < range; i++) {
-    ww[i] = (this->_vdata[i] - this->_vmmu[0]);
-  }
-  return ww;
-}
-#else
-Mpx::Mpx(const float *data, uint32_t debug_data_size, uint16_t window_size, float ez, uint16_t mp_time_constraint,
-         uint16_t history)
-    : _vdata(data), _data_len(debug_data_size), _window_size(window_size), _ez(ez),
-      _mp_time_constraint(mp_time_constraint), _profile_len(debug_data_size - window_size + 1),
-      _range(debug_data_size - window_size), _diag_end(debug_data_size - window_size + 1),
-      _exclusion_zone(round(window_size * ez + __DBL_EPSILON__) + 1),
-      _movsum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
-      _mov2sum((float *)calloc(debug_data_size - window_size + 1 + 1, sizeof(float))),
-      _vmatrix_profile((float *)malloc(sizeof(float) * debug_data_size - window_size + 1 + 1)),
-      _vprofile_index((int16_t *)malloc(sizeof(int16_t) * debug_data_size - window_size + 1 + 1)) {
-  // assigning variables here saves some memory that allows ESP32 to work
-
-  this->_diag_start = _exclusion_zone;
+Mpx::Mpx(uint16_t window_size, float ez, uint16_t time_constraint, uint16_t buffer_size)
+    : _window_size(window_size), _ez(ez), _time_constraint(time_constraint), _buffer_size(buffer_size),
+      _profile_len(buffer_size - _window_size + 1), _range(_profile_len - 1),
+      _exclusion_zone(roundf(_window_size * _ez + __FLT_EPSILON__) + 1),
+      _vmatrix_profile((float *)calloc(_profile_len + 1, sizeof(float))),
+      _data_buffer((float *)calloc(_buffer_size + 1, sizeof(float))),
+      _vprofile_index((int16_t *)calloc(_profile_len + 1, sizeof(int16_t))),
+      _vmmu((float *)calloc(_profile_len + 1, sizeof(float))), _vsig((float *)calloc(_profile_len + 1, sizeof(float))),
+      _vddf((float *)calloc(_profile_len + 1, sizeof(float))), _vddg((float *)calloc(_profile_len + 1, sizeof(float))),
+      _vww((float *)calloc(_window_size + 1, sizeof(float))) {
 
   // change the default value to -1
-  for (uint32_t i = 0; i < _profile_len; i++) {
-    this->_vmatrix_profile[i] = -1;
-    this->_vprofile_index[i] = -1;
-  }
-
-  this->_vmmu = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vsig = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vddf = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vddg = (float *)calloc(_profile_len + 1, sizeof(float));
-  this->_vww = (float *)calloc(_window_size + 1, sizeof(float));
-
-  if (_mp_time_constraint > 0) {
-    _diag_end = _mp_time_constraint;
-  }
+  memset(_vmatrix_profile, -1, _profile_len);
+  memset(_vprofile_index, -1, _profile_len);
 }
 
-void Mpx::movsum() {
+void Mpx::movmean() {
 
-  double accum = this->_vdata[0];
-  double resid = 0.0;
+  float accum = this->_data_buffer[0];
+  float resid = 0.0;
+  float movsum = 0.0;
 
   for (uint16_t i = 1; i < this->_window_size; i++) {
-    double const m = this->_vdata[i];
-    double const p = accum;
+    float const m = this->_data_buffer[i];
+    float const p = accum;
     accum = accum + m;
-    double const q = accum - p;
+    float const q = accum - p;
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
   if (resid > 0.001) {
-    printf("Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    printf("movsum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
   }
 
-  this->_movsum[0] = accum + resid;
+  movsum = accum + resid;
+  this->_vmmu[0] = (float)(movsum / (float)this->_window_size);
 
-  for (uint32_t i = this->_window_size; i < this->_data_len; i++) {
-    double const m = this->_vdata[i - this->_window_size];
-    double const n = this->_vdata[i];
-    double const p = accum - m;
-    double const q = p - accum;
-    double const r = resid + ((accum - (p - q)) - (m + q));
+  for (uint16_t i = this->_window_size; i < this->_buffer_size; i++) {
+    float const m = this->_data_buffer[i - this->_window_size];
+    float const n = this->_data_buffer[i];
+    float const p = accum - m;
+    float const q = p - accum;
+    float const r = resid + ((accum - (p - q)) - (m + q));
     accum = p + n;
-    double const t = accum - p;
+    float const t = accum - p;
     resid = r + ((p - (accum - t)) + (n - t));
-    this->_movsum[i - this->_window_size + 1] = accum + resid;
+    movsum = accum + resid;
+    this->_vmmu[i - this->_window_size + 1] = (float)(movsum / (float)this->_window_size);
   }
+
+  this->_last_movsum = movsum;
 }
 
-void Mpx::mov2sum() {
+void Mpx::movsig() {
 
-  double accum = this->_vdata[0] * this->_vdata[0];
-  double resid = 0.0;
+  /* double */ float accum = this->_data_buffer[0] * this->_data_buffer[0];
+  /* double */ float resid = 0.0;
+  float mov2sum = 0.0;
 
   for (uint16_t i = 1; i < this->_window_size; i++) {
-    double const m = this->_vdata[i] * this->_vdata[i];
-    double const p = accum;
+    /* double */ float const m = this->_data_buffer[i] * this->_data_buffer[i];
+    /* double */ float const p = accum;
     accum = accum + m;
-    double const q = accum - p;
+    /* double */ float const q = accum - p;
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
   if (resid > 0.001) {
-    printf("Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    printf("mov2sum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
   }
 
-  this->_mov2sum[0] = accum + resid;
+  mov2sum = accum + resid;
+  this->_vsig[0] = 1 / sqrtf(mov2sum - this->_vmmu[0] * this->_vmmu[0] * this->_window_size);
 
-  for (uint32_t i = this->_window_size; i < this->_data_len; i++) {
-    double const m = this->_vdata[i - this->_window_size] * this->_vdata[i - this->_window_size];
-    double const n = this->_vdata[i] * this->_vdata[i];
-    double const p = accum - m;
-    double const q = p - accum;
-    double const r = resid + ((accum - (p - q)) - (m + q));
+  for (uint16_t i = this->_window_size; i < this->_buffer_size; i++) {
+    float const m = this->_data_buffer[i - this->_window_size] * this->_data_buffer[i - this->_window_size];
+    float const n = this->_data_buffer[i] * this->_data_buffer[i];
+    float const p = accum - m;
+    float const q = p - accum;
+    float const r = resid + ((accum - (p - q)) - (m + q));
     accum = p + n;
-    double const t = accum - p;
+    float const t = accum - p;
     resid = r + ((p - (accum - t)) + (n - t));
-    this->_mov2sum[i - this->_window_size + 1] = accum + resid;
+    mov2sum = accum + resid;
+    this->_vsig[i - this->_window_size + 1] =
+        1 / sqrtf(mov2sum - this->_vmmu[i - this->_window_size + 1] * this->_vmmu[i - this->_window_size + 1] *
+                                this->_window_size);
   }
+
+  this->_last_mov2sum = mov2sum;
 }
 
 void Mpx::muinvn() {
-  for (uint32_t i = 0; i < this->_profile_len; i++) {
-    this->_vmmu[i] = (float)(this->_movsum[i] / (float)this->_window_size);
+  movmean();
+  movsig();
+}
+
+void Mpx::new_data(const float *data, uint16_t size) {
+
+  for (uint16_t i = 0; i < (_buffer_size - size); i++) {
+    this->_data_buffer[i] = this->_data_buffer[size + i];
   }
 
-  for (uint32_t i = 0; i < this->_profile_len; i++) {
-    this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_vmmu[i] * this->_vmmu[i] * this->_window_size);
-    // this->_vsig[i] = 1 / sqrt(this->_mov2sum[i] - this->_movsum[i] * this->_movsum[i] / (float)this->_window_size);
+  for (uint16_t i = 0; i < size; i++) {
+    this->_data_buffer[(_buffer_size - size + i)] = data[i];
   }
 }
 
-void Mpx::Ddf_s() {
+void Mpx::muinvn_next(uint16_t size) {
+
+  uint16_t j = this->_profile_len - size;
+
+  // update 1 step
+  for (uint16_t i = 0; i < j; i++) {
+    _vmmu[i] = _vmmu[i + size];
+    _vsig[i] = _vsig[i + size];
+  }
+
+  // compute new mmu sig
+  float accum = this->_last_movsum;
+  float accum2 = this->_last_mov2sum;
+
+  for (uint16_t i = j; i < _profile_len; i++) {
+    float const m = _data_buffer[i - 1];
+    float const n = _data_buffer[i - 1 + _window_size];
+    accum2 = accum2 - m * m + n * n;
+    accum = accum - m + n;
+    _vmmu[i] = (float)(accum / (float)_window_size);
+    _vsig[i] = 1 / sqrtf(accum2 - _vmmu[i] * _vmmu[i] * _window_size);
+  }
+}
+
+void Mpx::ddf_next(uint16_t size) {
   // differentials have 0 as their first entry. This simplifies index
   // calculations slightly and allows us to avoid special "first line"
   // handling.
 
-  for (uint32_t i = 0; i < _range; i++) {
-    this->_vddf[i] = 0.5 * (this->_vdata[i] - this->_vdata[i + this->_window_size]);
+  uint16_t j = _range - size;
+
+  // update 1 step
+  for (uint16_t i = 0; i < j; i++) {
+    this->_vddf[i] = this->_vddf[i + size];
   }
 
+  // compute new ddf
+  for (uint16_t i = j; i < _range; i++) {
+    this->_vddf[i] = 0.5 * (this->_data_buffer[i] - this->_data_buffer[i + this->_window_size]);
+  }
+
+  // DEBUG: this should already be zero
   this->_vddf[_range] = 0.0;
 }
 
-void Mpx::Ddg_s() {
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
+void Mpx::ddg_next(uint16_t size) {
+  // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
+  // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
+  // window)
 
-  for (uint32_t i = 0; i < _range; i++) {
-    this->_vddg[i] = (this->_vdata[i + this->_window_size] - this->_vmmu[i + 1]) + (this->_vdata[i] - this->_vmmu[i]);
+  uint16_t j = _range - size;
+
+  // update 1 step
+  for (uint16_t i = 0; i < j; i++) {
+    this->_vddg[i] = this->_vddg[i + size];
+  }
+
+  // compute new ddg
+  for (uint16_t i = j; i < _range; i++) {
+    this->_vddg[i] =
+        (this->_data_buffer[i + this->_window_size] - this->_vmmu[i + 1]) + (this->_data_buffer[i] - this->_vmmu[i]);
   }
 
   this->_vddg[_range] = 0.0;
 }
 
-void Mpx::Ww_s() {
-  for (uint32_t i = 0; i < _window_size; i++) {
-    this->_vww[i] = (this->_vdata[_range + i] - this->_vmmu[_range]);
+void Mpx::ddf_s() {
+  // differentials have 0 as their first entry. This simplifies index
+  // calculations slightly and allows us to avoid special "first line"
+  // handling.
+
+  for (uint16_t i = 0; i < _range; i++) {
+    this->_vddf[i] = 0.5 * (this->_data_buffer[i] - this->_data_buffer[i + this->_window_size]);
+  }
+
+  this->_vddf[_range] = 0.0;
+}
+
+void Mpx::ddg_s() {
+  // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
+  // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
+  // window)
+
+  for (uint16_t i = 0; i < _range; i++) {
+    this->_vddg[i] =
+        (this->_data_buffer[i + this->_window_size] - this->_vmmu[i + 1]) + (this->_data_buffer[i] - this->_vmmu[i]);
+  }
+
+  this->_vddg[_range] = 0.0;
+}
+
+void Mpx::ww_s() {
+  for (uint16_t i = 0; i < _window_size; i++) {
+    this->_vww[i] = (this->_data_buffer[_range + i] - this->_vmmu[_range]);
   }
 }
 
-void Mpx::ComputeStream() {
-  uint16_t const new_data_len = _data_len - _window_size * 2; // incoming data
+void Mpx::compute_stream() {                                     // uint16_t new_data_len) {
+  uint16_t const new_data_len = _buffer_size - _window_size * 2; // incoming data
 
-  // if (mp_time_constraint > 0) {
-  //   diag_start = _data_len - mp_time_constraint - _window_size;
+  bool initial = (new_data_len == this->_buffer_size);
+  uint16_t off_min;
+
+  // if (_time_constraint > 0) {
+  //   diag_start = _buffer_size - _time_constraint - _window_size;
   // }
 
-  this->_diag_start = 0;
-  this->_diag_end = this->_profile_len - this->_exclusion_zone;
+  uint16_t diag_start = 0;
+  uint16_t diag_end = this->_profile_len - this->_exclusion_zone;
 
-  movsum();
-  mov2sum();
   muinvn();
-  // free(this->_movsum);
-  // free(this->_mov2sum);
-  Ddf_s();
-  Ddg_s();
-  Ww_s();
+  ddf_s();
+  ddg_s();
+  ww_s();
 
-  for (uint32_t i = _diag_start; i < _diag_end; i++) {
-    // this mess is just the inner_product but _vdata needs to be minus _vmmu[i] before multiply
+  for (uint16_t i = diag_start; i < diag_end; i++) {
+    // this mess is just the inner_product but _data_buffer needs to be minus _vmmu[i] before multiply
 
-#if defined(ARDUINO_ESP32_DEV)
-    if (!(i % 100)) {
-      Serial.println(i);
-    }
-#else
-    if (!(i % 100)) {
+    if (!(i % 1000)) {
       printf("%u\n", i);
     }
-#endif
 
     float c = 0.0;
 
     // inner product demeaned
-    for (uint32_t j = 0; j < _window_size; j++) {
-      c += (_vdata[i + j] - _vmmu[i]) * _vww[j];
+    for (uint16_t j = 0; j < _window_size; j++) {
+      c += (_data_buffer[i + j] - _vmmu[i]) * _vww[j];
     }
 
-    uint32_t const off_min = MAX(_range - new_data_len, _range - i - 1);
-    uint32_t const off_start = _range;
+    if (initial) {
+      off_min = _range - i - 1;
+    } else {
+      off_min = MAX(_range - new_data_len, _range - i - 1);
+    }
+    uint16_t const off_start = _range;
 
     // loop if more than 1 new data
-    for (uint32_t offset = off_start; offset > off_min; offset--) {
+    if(off_start <= off_min) {
+      printf("Unnecessary loop\n");
+    }
+
+    for (uint16_t offset = off_start; offset > off_min; offset--) {
       // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint32_t const off_diag = offset - (_range - i);
+      uint16_t const off_diag = offset - (_range - i);
+
+      c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
+      float const c_cmp = c * _vsig[offset] * _vsig[off_diag];
+
+      // RMP
+      if (c_cmp > _vmatrix_profile[off_diag]) {
+        _vmatrix_profile[off_diag] = c_cmp;
+        _vprofile_index[off_diag] = offset + 1;
+      }
+    }
+  }
+}
+
+void Mpx::compute_next(float *data, uint16_t size) { // uint16_t new_data_len) {
+  uint16_t const new_data_len = size;                // incoming data
+
+  bool initial = (new_data_len == this->_buffer_size);
+  uint16_t off_min;
+
+  // if (_time_constraint > 0) {
+  //   diag_start = _buffer_size - _time_constraint - _window_size;
+  // }
+
+  uint16_t diag_start = 0;
+  uint16_t diag_end = this->_profile_len - this->_exclusion_zone;
+
+  new_data(data, size); // store new data on buffer
+  muinvn_next(size); // compute next mean and sig
+  ddf_next(size); // compute next ddf
+  ddg_next(size); // compute next ddg
+  ww_s(); // recompute ww
+
+  for (uint16_t i = diag_start; i < diag_end; i++) {
+    // this mess is just the inner_product but _data_buffer needs to be minus _vmmu[i] before multiply
+
+    if (!(i % 1000)) {
+      printf("%u\n", i);
+    }
+
+    float c = 0.0;
+
+    // inner product demeaned
+    for (uint16_t j = 0; j < _window_size; j++) {
+      c += (_data_buffer[i + j] - _vmmu[i]) * _vww[j];
+    }
+
+    if (initial) {
+      off_min = _range - i - 1;
+    } else {
+      off_min = MAX(_range - new_data_len, _range - i - 1);
+    }
+    uint16_t const off_start = _range;
+
+    // loop if more than 1 new data
+    for (uint16_t offset = off_start; offset > off_min; offset--) {
+      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
+      uint16_t const off_diag = offset - (_range - i);
 
       c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
       float const c_cmp = c * _vsig[offset] * _vsig[off_diag];
@@ -447,12 +339,11 @@ Mpx::~Mpx() {
   free(this->_vmmu);
   free(this->_vprofile_index);
   free(this->_vmatrix_profile);
-  this->_vdata = nullptr;
+  free(this->_data_buffer);
 
   // free debug arrays
-  free(this->_movsum);
-  free(this->_mov2sum);
+  // free(this->_movmean);
+  // free(this->_movsig);
 }
-#endif // USE_STL
 
 } // namespace MatrixProfile
