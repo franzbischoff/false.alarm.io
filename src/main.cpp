@@ -693,7 +693,7 @@ void setup() {
 void loop() {
 
   static int done = 0;
-  static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
+  static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
 
   digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
   delay(5000);                     // wait for a second
@@ -704,6 +704,7 @@ void loop() {
 
     auto start = std::chrono::system_clock::now();
 
+    mpx.initial_data(TEST_DATA, 2000); // 2: 1799.1505127; 3: 2799.3811035; 4: 3800.0820312; 5: 4799.7426758
     mpx.compute_stream();
 
     auto end = std::chrono::system_clock::now();
@@ -716,8 +717,9 @@ void loop() {
     delay(5000);                     // wait for a second
     digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
 
-    float *res = mpx.get_matrix();
-    float sum = 0;
+    mpx.compute_next(&TEST_DATA[2000], 1000);
+    mpx.compute_next(&TEST_DATA[3000], 1500);
+    mpx.compute_next(&TEST_DATA[4500], 500);
 
     digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
     delay(1000);                     // wait for a second
@@ -725,8 +727,11 @@ void loop() {
 
     start = std::chrono::system_clock::now();
 
-    for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-      sum += res[i];
+    float *res = mpx.get_matrix();
+    float sum = 0;
+
+    for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
+      sum += res[i]; // < 0 ? 0 : res[i];
     }
 
     end = std::chrono::system_clock::now();
@@ -739,7 +744,7 @@ void loop() {
     delay(1000);                     // wait for a second
     digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
 
-    Serial.printf("MP sum is %.2f\n", sum);
+    Serial.printf("MP sum is %.7f\n", sum);
     Serial.println();
     done = 1;
   } else {
@@ -753,20 +758,27 @@ int main(int argc, char **argv) {
 
   std::cout << "Tick" << std::endl;
 
-  static MatrixProfile::Mpx mpx(TEST_DATA, DATA_SIZE, WIN_SIZE, 0.5, 0, 5000);
+  static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
 
   // for (uint16_t i = 0; i < 200; i++) {
-  mpx.compute_stream();
+  mpx.initial_data(TEST_DATA, 2000); // 2: 1799.1505127; 3: 2799.3811035; 4: 3800.0820312; 5: 4799.7426758
+  mpx.compute_stream(); //              2: 93599.4921875; 3: 142240.1250000; 4: 190884.9218750; 5: 239518.7656250
+  mpx.compute_next(&TEST_DATA[2000], 1000);
+  std::cout << "Tick" << std::endl;
+  mpx.compute_next(&TEST_DATA[3000], 1500);
+  std::cout << "Tick" << std::endl; // 4298.9072266
+  mpx.compute_next(&TEST_DATA[4500], 500);
+  std::cout << "Tick" << std::endl;
   // }
 
   float *res = mpx.get_matrix();
   float sum = 0;
 
-  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-    sum += res[i];
+  for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
+    sum += res[i]; // < 0 ? 0 : res[i];
   }
 
-  std::cout << "Done " << sum << std::endl;
+  printf("Done: %.7f\n", sum);
 
   // mpx.~Mpx();
   // MallocExtension::instance()->ReleaseFreeMemory();
@@ -817,4 +829,3 @@ int main(int argc, char **argv) {
   return 0;
 }
 #endif // ARDUINO_ARCH_AVR
-
