@@ -8,12 +8,12 @@
 #include <cstring>
 
 namespace MatrixProfile {
-Mpx::Mpx(uint16_t window_size, float ez, uint16_t time_constraint, uint16_t buffer_size)
+Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
-      profile_len_(buffer_size - window_size_ + 1), range_(profile_len_ - 1),
+      buffer_start_(buffer_size), profile_len_(buffer_size - window_size_ + 1), range_(profile_len_ - 1),
       exclusion_zone_(roundf(window_size_ * ez_ + __FLT_EPSILON__) + 1),
-      vmatrix_profile_((float *)calloc(profile_len_ + 1, sizeof(float))),
       data_buffer_((float *)calloc(buffer_size_ + 1, sizeof(float))),
+      vmatrix_profile_((float *)calloc(profile_len_ + 1, sizeof(float))),
       vprofile_index_((int16_t *)calloc(profile_len_ + 1, sizeof(int16_t))),
       vmmu_((float *)calloc(profile_len_ + 1, sizeof(float))), vsig_((float *)calloc(profile_len_ + 1, sizeof(float))),
       vddf_((float *)calloc(profile_len_ + 1, sizeof(float))), vddg_((float *)calloc(profile_len_ + 1, sizeof(float))),
@@ -23,11 +23,8 @@ Mpx::Mpx(uint16_t window_size, float ez, uint16_t time_constraint, uint16_t buff
 
   for (uint16_t i = 0; i < profile_len_; i++) {
     vmatrix_profile_[i] = 0.0;
-    vprofile_index_[i] = 0.0;
+    vprofile_index_[i] = 0;
   }
-
-  // memset(vmatrix_profile_, 0, profile_len_);
-  // memset(vprofile_index_, 0, profile_len_);
 }
 
 void Mpx::movmean() {
@@ -69,15 +66,15 @@ void Mpx::movmean() {
 
 void Mpx::movsig() {
 
-  /* float */ float accum = this->data_buffer_[buffer_start_] * this->data_buffer_[buffer_start_];
-  /* float */ float resid = 0.0;
+  float accum = this->data_buffer_[buffer_start_] * this->data_buffer_[buffer_start_];
+  float resid = 0.0;
   float mov2sum = 0.0;
 
   for (uint16_t i = 1; i < this->window_size_; i++) {
-    /* float */ float const m = this->data_buffer_[buffer_start_ + i] * this->data_buffer_[buffer_start_ + i];
-    /* float */ float const p = accum;
+    float const m = this->data_buffer_[buffer_start_ + i] * this->data_buffer_[buffer_start_ + i];
+    float const p = accum;
     accum = accum + m;
-    /* float */ float const q = accum - p;
+    float const q = accum - p;
     resid = resid + ((p - (accum - q)) + (m - q));
   }
 
@@ -107,76 +104,13 @@ void Mpx::movsig() {
   this->last_mov2sum_ = mov2sum;
 }
 
-void Mpx::muinvn() {
-  movmean();
-  movsig();
-}
+void Mpx::muinvn(uint16_t size) {
 
-void Mpx::initial_data(const float *data, uint16_t size) {
-
-  if (size > buffer_size_) {
-    printf("Data size is larger than the buffer\n");
+  if (size == 0) {
+    movmean();
+    movsig();
     return;
-  } else {
-
-    for (uint16_t i = 0; i < (buffer_size_ - size); i++) {
-      this->data_buffer_[i] = 0.0;
-    }
-    for (uint16_t i = 0; i < size; i++) {
-      this->data_buffer_[(buffer_size_ - size + i)] = data[i];
-    }
-
-    buffer_used_ = size;
-
-    buffer_start_ = buffer_size_ - buffer_used_;
   }
-}
-
-void Mpx::new_data(const float *data, uint16_t size) {
-
-  printf("new_data\n");
-
-  if (size > buffer_size_) {
-    printf("Data size is larger than the buffer\n");
-    return;
-  } else {
-
-    if (size < buffer_size_) {
-      for (uint16_t i = 0; i < (buffer_size_ - size); i++) {
-        this->data_buffer_[i] = this->data_buffer_[size + i];
-      }
-    }
-
-    for (uint16_t i = 0; i < size; i++) {
-      this->data_buffer_[(buffer_size_ - size + i)] = data[i];
-    }
-
-    buffer_used_ = MIN(buffer_size_, buffer_used_ + size);
-    buffer_start_ = buffer_size_ - buffer_used_;
-  }
-}
-
-void Mpx::mp_next(uint16_t size) {
-
-  printf("mp_next\n");
-
-  uint16_t j = this->profile_len_ - size;
-
-  // update 1 step
-  for (uint16_t i = 0; i < j; i++) {
-    vmatrix_profile_[i] = vmatrix_profile_[i + size];
-    vprofile_index_[i] = vprofile_index_[i + size];
-  }
-
-  for (uint16_t i = j; i < profile_len_; i++) {
-    vmatrix_profile_[i] = 0.0;
-    vprofile_index_[i] = 0;
-  }
-}
-
-void Mpx::muinvn_next(uint16_t size) {
-
-  printf("muinvn_next\n");
 
   uint16_t j = this->profile_len_ - size;
 
@@ -203,22 +137,82 @@ void Mpx::muinvn_next(uint16_t size) {
   this->last_mov2sum_ = accum2;
 }
 
-void Mpx::ddf_next(uint16_t size) {
+bool Mpx::new_data(const float *data, uint16_t size) {
+
+  bool first = true;
+
+  if ((2 * size) > buffer_size_) {
+    printf("Data size is too large\n");
+    return false;
+  } else if (size < (2 * window_size_)) {
+    printf("Data size is too small\n");
+    return false;
+  } else {
+    if (buffer_start_ != buffer_size_ || buffer_used_ >= 0) {
+      first = false;
+      // we must shift data
+      for (uint16_t i = 0; i < (buffer_size_ - size); i++) {
+        this->data_buffer_[i] = this->data_buffer_[size + i];
+      }
+      // then copy
+      for (uint16_t i = 0; i < size; i++) {
+        this->data_buffer_[(buffer_size_ - size + i)] = data[i];
+      }
+    } else {
+      // fresh start, buffer must be already filled with zeroes
+      for (uint16_t i = 0; i < size; i++) {
+        this->data_buffer_[(buffer_size_ - size + i)] = data[i];
+      }
+    }
+
+    buffer_used_ += size;
+    buffer_start_ -= size;
+
+    if (buffer_used_ > buffer_size_) {
+      buffer_used_ = buffer_size_;
+    }
+
+    if (buffer_start_ < 0) {
+      buffer_start_ = 0;
+    }
+  }
+
+  return first;
+}
+
+void Mpx::mp_next(uint16_t size) {
+
+  uint16_t j = this->profile_len_ - size;
+
+  // update 1 step
+  for (uint16_t i = 0; i < j; i++) {
+    vmatrix_profile_[i] = vmatrix_profile_[i + size];
+    vprofile_index_[i] = vprofile_index_[i + size] - size; // the index must be reduced
+  }
+
+  for (uint16_t i = j; i < profile_len_; i++) {
+    vmatrix_profile_[i] = 0.0;
+    vprofile_index_[i] = 0;
+  }
+}
+
+void Mpx::ddf(uint16_t size) {
   // differentials have 0 as their first entry. This simplifies index
   // calculations slightly and allows us to avoid special "first line"
   // handling.
 
-  printf("ddf_next\n");
+  uint16_t start = buffer_start_;
 
-  uint16_t j = range_ - size;
+  if (size > 0) {
+    // shift data
+    for (uint16_t i = buffer_start_; i < (range_ - size); i++) {
+      this->vddf_[i] = this->vddf_[i + size];
+    }
 
-  // update 1 step
-  for (uint16_t i = 0; i < j; i++) {
-    this->vddf_[i] = this->vddf_[i + size];
+    start = (range_ - size);
   }
 
-  // compute new ddf
-  for (uint16_t i = j; i < range_; i++) {
+  for (uint16_t i = start; i < range_; i++) {
     this->vddf_[i] = 0.5 * (this->data_buffer_[i] - this->data_buffer_[i + this->window_size_]);
   }
 
@@ -226,47 +220,23 @@ void Mpx::ddf_next(uint16_t size) {
   this->vddf_[range_] = 0.0;
 }
 
-void Mpx::ddg_next(uint16_t size) {
+void Mpx::ddg(uint16_t size) {
   // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
   // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
   // window)
 
-  printf("ddg_next\n");
+  uint16_t start = buffer_start_;
 
-  uint16_t j = range_ - size;
+  if (size > 0) {
+    // shift data
+    for (uint16_t i = buffer_start_; i < (range_ - size); i++) {
+      this->vddg_[i] = this->vddg_[i + size];
+    }
 
-  // update 1 step
-  for (uint16_t i = 0; i < j; i++) {
-    this->vddg_[i] = this->vddg_[i + size];
+    start = (range_ - size);
   }
 
-  // compute new ddg
-  for (uint16_t i = j; i < range_; i++) {
-    this->vddg_[i] =
-        (this->data_buffer_[i + this->window_size_] - this->vmmu_[i + 1]) + (this->data_buffer_[i] - this->vmmu_[i]);
-  }
-
-  this->vddg_[range_] = 0.0;
-}
-
-void Mpx::ddf_s() {
-  // differentials have 0 as their first entry. This simplifies index
-  // calculations slightly and allows us to avoid special "first line"
-  // handling.
-
-  for (uint16_t i = buffer_start_; i < range_; i++) {
-    this->vddf_[i] = 0.5 * (this->data_buffer_[i] - this->data_buffer_[i + this->window_size_]);
-  }
-
-  this->vddf_[range_] = 0.0;
-}
-
-void Mpx::ddg_s() {
-  // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
-  // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
-  // window)
-
-  for (uint16_t i = buffer_start_; i < range_; i++) {
+  for (uint16_t i = start; i < range_; i++) {
     this->vddg_[i] =
         (this->data_buffer_[i + this->window_size_] - this->vmmu_[i + 1]) + (this->data_buffer_[i] - this->vmmu_[i]);
   }
@@ -280,17 +250,23 @@ void Mpx::ww_s() {
   }
 }
 
-void Mpx::compute_stream() { // uint16_t new_data_len) {
+uint16_t Mpx::compute(const float *data, uint16_t size) {
 
-  muinvn();
-  ddf_s();
-  ddg_s();
+  bool first = new_data(data, size); // store new data on buffer
+
+  if (first) {
+    muinvn();
+    ddf();
+    ddg();
+  } else {
+    muinvn(size); // compute next mean and sig
+    ddf(size);         // compute next ddf
+    ddg(size);         // compute next ddg
+    mp_next(size);     // shift MP
+  }
+
   ww_s();
 
-  // uint16_t const new_data_len = buffer_size_ - window_size_ * 2; // incoming data
-  // uint16_t const new_data_len = buffer_used_; // incoming data
-
-  // bool initial = (new_data_len == this->buffer_size_);
   uint16_t off_min;
 
   // if (time_constraint_ > 0) {
@@ -299,8 +275,6 @@ void Mpx::compute_stream() { // uint16_t new_data_len) {
 
   uint16_t diag_start = buffer_start_;
   uint16_t diag_end = this->profile_len_ - this->exclusion_zone_;
-
-  printf("compute_stream %d %d\n", diag_start, diag_end);
 
   for (uint16_t i = diag_start; i < diag_end; i++) {
     // this mess is just the inner_product but data_buffer_ needs to be minus vmmu_[i] before multiply
@@ -316,19 +290,13 @@ void Mpx::compute_stream() { // uint16_t new_data_len) {
       c += (data_buffer_[i + j] - vmmu_[i]) * vww_[j];
     }
 
-    // if (initial) {
-    //   off_min = range_ - i - 1;
-    // } else {
-    // off_min = MAX(range_ - new_data_len, range_ - i - 1);
-    off_min = range_ - i - 1;
-    // }
-    uint16_t const off_start = range_;
+    if (size == 0) {
+      off_min = range_ - i - 1;
+    } else {
+      off_min = MAX(range_ - size, range_ - i - 1);
+    }
 
-    // loop if more than 1 new data
-    // Tested, it works
-    // if(off_start <= off_min) {
-    //   printf("Unnecessary loop\n");
-    // }
+    uint16_t const off_start = range_;
 
     for (uint16_t offset = off_start; offset > off_min; offset--) {
       // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
@@ -350,75 +318,8 @@ void Mpx::compute_stream() { // uint16_t new_data_len) {
       }
     }
   }
-}
 
-void Mpx::compute_next(const float *data, uint16_t size) { // uint16_t new_data_len) {
-  new_data(data, size);                                    // store new data on buffer
-  muinvn_next(size);                                       // compute next mean and sig
-  mp_next(size);                                           // compute next mean and sig
-  ddf_next(size);                                          // compute next ddf
-  ddg_next(size);                                          // compute next ddg
-  ww_s();                                                  // recompute ww
-
-  // uint16_t const new_data_len = buffer_size_ - window_size_ * 2;                      // incoming data
-  uint16_t const new_data_len = size;                      // incoming data
-
-  // bool initial = (new_data_len == this->buffer_size_);
-  uint16_t off_min;
-
-  // if (time_constraint_ > 0) {
-  //   diag_start = buffer_size_ - time_constraint_ - window_size_;
-  // }
-
-  uint16_t diag_start = buffer_start_;
-  uint16_t diag_end = this->profile_len_ - this->exclusion_zone_;
-
-  printf("compute_next %d %d\n", diag_start, diag_end);
-
-  for (uint16_t i = diag_start; i < diag_end; i++) {
-    // this mess is just the inner_product but data_buffer_ needs to be minus vmmu_[i] before multiply
-
-    if (!(i % 1000)) {
-      printf("%u\n", i);
-    }
-
-    float c = 0.0;
-
-    // inner product demeaned
-    for (uint16_t j = 0; j < window_size_; j++) {
-      c += (data_buffer_[i + j] - vmmu_[i]) * vww_[j];
-    }
-
-    // if (initial) {
-    //   off_min = range_ - i - 1;
-    // } else {
-    off_min = MAX(range_ - new_data_len, range_ - i - 1);
-    // off_min = range_ - i - 1;
-    // }
-    uint16_t const off_start = range_;
-
-    // printf("compute_next off_start %d off_min %d\n", off_start, off_min);
-
-    // loop if more than 1 new data
-    for (uint16_t offset = off_start; offset > off_min; offset--) {
-      // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-      uint16_t const off_diag = offset - (range_ - i);
-
-      c += vddf_[offset] * vddg_[off_diag] + vddf_[off_diag] * vddg_[offset];
-
-      if ((vsig_[offset] > 60) || (vsig_[off_diag] > 60)) { // wild sig, misleading
-        continue;
-      }
-
-      float const c_cmp = c * vsig_[offset] * vsig_[off_diag];
-
-      // RMP
-      if (c_cmp > vmatrix_profile_[off_diag]) {
-        vmatrix_profile_[off_diag] = c_cmp;
-        vprofile_index_[off_diag] = offset + 1;
-      }
-    }
-  }
+  return (this->buffer_size_ - this->buffer_used_);
 }
 
 Mpx::~Mpx() {
