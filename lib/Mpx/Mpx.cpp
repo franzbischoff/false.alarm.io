@@ -4,9 +4,6 @@
 
 #include "Mpx.hpp"
 
-#include <cmath>
-#include <cstring>
-
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
@@ -15,15 +12,15 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
       data_buffer_((float *)calloc(buffer_size_ + 1, sizeof(float))),
       vmatrix_profile_((float *)calloc(profile_len_ + 1, sizeof(float))),
       vprofile_index_((int16_t *)calloc(profile_len_ + 1, sizeof(int16_t))),
-      vmmu_((float *)calloc(profile_len_ + 1, sizeof(float))), vsig_((float *)calloc(profile_len_ + 1, sizeof(float))),
-      vddf_((float *)calloc(profile_len_ + 1, sizeof(float))), vddg_((float *)calloc(profile_len_ + 1, sizeof(float))),
-      vww_((float *)calloc(window_size_ + 1, sizeof(float))) {
+      floss_((float *)calloc(profile_len_ + 1, sizeof(float))), vmmu_((float *)calloc(profile_len_ + 1, sizeof(float))),
+      vsig_((float *)calloc(profile_len_ + 1, sizeof(float))), vddf_((float *)calloc(profile_len_ + 1, sizeof(float))),
+      vddg_((float *)calloc(profile_len_ + 1, sizeof(float))), vww_((float *)calloc(window_size_ + 1, sizeof(float))) {
 
   // change the default value to 0
 
   for (uint16_t i = 0; i < profile_len_; i++) {
     vmatrix_profile_[i] = 0.0;
-    vprofile_index_[i] = 0;
+    vprofile_index_[i] = -1;
   }
 }
 
@@ -192,7 +189,7 @@ void Mpx::mp_next(uint16_t size) {
 
   for (uint16_t i = j; i < profile_len_; i++) {
     vmatrix_profile_[i] = 0.0;
-    vprofile_index_[i] = 0;
+    vprofile_index_[i] = -1;
   }
 }
 
@@ -250,6 +247,41 @@ void Mpx::ww_s() {
   }
 }
 
+void Mpx::floss() {
+  for (uint16_t i = 0; i < this->profile_len_; i++) {
+    int16_t j = vprofile_index_[i];
+
+    if (j < 0 || j >= this->profile_len_) {
+      continue;
+    }
+
+    floss_[MIN(i, j)] += 1.0;
+    floss_[MAX(i, j)] -= 1.0;
+  }
+
+  const float a = 1.939274;
+  const float b = 1.69815;
+  const float c = 4.035477;
+  const float len = (float)this->profile_len_;
+  const float x = 1.0 / len;
+  float iac = 0.001;
+
+  // cumsum
+  for (uint16_t i = 0; i < this->range_; i++) {
+    floss_[i + 1] += floss_[i];
+    if (i < this->window_size_ || i > (this->profile_len_ - this->window_size_)) {
+      floss_[i] = 1.0;
+    } else {
+      iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
+      floss_[i] = floss_[i] / iac;
+    }
+  }
+
+  // x <- seq(0, 1, length.out = cac_size)
+  //  mode <- 0.6311142 # best point to analyze the segment change
+  //  iac <- a * b * x^(a - 1) * (1 - x^a)^(b - 1) * cac_size / 4.035477
+}
+
 uint16_t Mpx::compute(const float *data, uint16_t size) {
 
   bool first = new_data(data, size); // store new data on buffer
@@ -259,10 +291,10 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
     ddf();
     ddg();
   } else {
-    muinvn(size); // compute next mean and sig
-    ddf(size);         // compute next ddf
-    ddg(size);         // compute next ddg
-    mp_next(size);     // shift MP
+    muinvn(size);  // compute next mean and sig
+    ddf(size);     // compute next ddf
+    ddg(size);     // compute next ddg
+    mp_next(size); // shift MP
   }
 
   ww_s();

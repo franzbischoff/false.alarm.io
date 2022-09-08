@@ -10,9 +10,9 @@
 #include <Arduino.h>
 // #include <CircularBuffer.h>
 #else
-#include <stdint.h>
 #include <memory>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #endif
 
@@ -34,11 +34,12 @@ namespace MatrixProfile {
 class Mpx {
 public:
   // cppcheck-suppress noExplicitConstructor
-  Mpx(const uint16_t window_size, const float ez = 0.5, const uint16_t time_constraint = 0, const uint16_t buffer_size = 5000);
+  Mpx(uint16_t window_size, float ez = 0.5, uint16_t time_constraint = 0, uint16_t buffer_size = 5000);
   ~Mpx(); // destructor
   // void Compute();
   bool new_data(const float *data, uint16_t size);
   uint16_t compute(const float *data, uint16_t size = 0);
+  void floss();
   void movmean();
   void movsig();
   void muinvn(uint16_t size = 0);
@@ -50,6 +51,7 @@ public:
   // Getters
   float *get_matrix() { return vmatrix_profile_; };
   int16_t *get_indexes() { return vprofile_index_; };
+  float *get_floss() { return floss_; };
 
 private:
   const uint16_t window_size_;
@@ -71,6 +73,7 @@ private:
   float *data_buffer_ = nullptr;
   float *vmatrix_profile_ = nullptr;
   int16_t *vprofile_index_ = nullptr;
+  float *floss_ = nullptr;
   float *vmmu_ = nullptr;
   float *vsig_ = nullptr;
   float *vddf_ = nullptr;
