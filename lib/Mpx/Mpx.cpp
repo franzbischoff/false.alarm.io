@@ -247,6 +247,7 @@ void Mpx::ww_s() {
   }
 }
 
+// IAC can be hard coded later
 void Mpx::floss() {
   for (uint16_t i = 0; i < this->profile_len_; i++) {
     int16_t j = vprofile_index_[i];
@@ -255,15 +256,23 @@ void Mpx::floss() {
       continue;
     }
 
-    floss_[MIN(i, j)] += 1.0;
-    floss_[MAX(i, j)] -= 1.0;
+    if (j < i) {
+      printf("i = %d ; j = %d \n", i, j);
+    }
+
+    // floss_[MIN(i, j)] += 1.0;
+    // floss_[MAX(i, j)] -= 1.0;
+    // RMP, i is always < j
+    floss_[i] += 1.0;
+    floss_[j] -= 1.0;
   }
 
-  const float a = 1.939274;
-  const float b = 1.69815;
-  const float c = 4.035477;
+  // const float a = 1.939274;
+  // const float b = 1.69815;
+  // const float c = 4.035477;
   const float len = (float)this->profile_len_;
   const float x = 1.0 / len;
+  const float llen = len * 1.1494;
   float iac = 0.001;
 
   // cumsum
@@ -272,8 +281,13 @@ void Mpx::floss() {
     if (i < this->window_size_ || i > (this->profile_len_ - this->window_size_)) {
       floss_[i] = 1.0;
     } else {
-      iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
-      floss_[i] = floss_[i] / iac;
+      // iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
+      // iac = 0.816057 * len * powf(i * x, 0.939274) * powf(1 - powf(i * x, 1.93927), 0.69815);
+      // iac = 0.8245 * powf(i * x, 0.94) * powf(1.0 - powf(i * x, 1.94), 0.7) * len;
+      const float idx = i * x;
+      iac = powf(idx, 1.08) * powf(1 - idx, 0.64) * llen; // faster
+      const float res = floss_[i] / iac;
+      floss_[i] = res > 1 ? 1 : res;
     }
   }
 

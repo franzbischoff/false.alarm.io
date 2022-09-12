@@ -1063,6 +1063,9 @@ int main(int argc, char **argv) {
 }
 #elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
 
+// pio remote run -e esp32 -t upload
+// pio remote device monitor -b 115200
+
 // cppcheck-suppress unusedFunction
 void setup() {
   Serial.begin(115200);
@@ -1159,25 +1162,41 @@ int main(int argc, char **argv) {
   // mpx.initial_data(TEST_DATA, 2000); // 2: 1799.1505127; 3: 2799.3811035; 4: 3800.0820312; 5: 4799.7426758
   // mpx.compute(TEST_DATA, 2000); //              2: 93599.4921875; 3: 142240.1250000; 4: 190884.9218750; 5:
   // 239518.7656250
-  mpx.compute(TEST_DATA, 2500);
-  mpx.compute(&TEST_DATA[2500], 2500);
+  mpx.compute(TEST_DATA, 1500);
+  mpx.compute(&TEST_DATA[1500], 500);
+  mpx.compute(&TEST_DATA[4000], 500);
+  mpx.compute(&TEST_DATA[4500], 500);
+  mpx.compute(&TEST_DATA[2000], 500);
+  mpx.compute(&TEST_DATA[2500], 500);
+  mpx.compute(&TEST_DATA[4000], 500);
+  mpx.compute(&TEST_DATA[4500], 500);
+  mpx.compute(&TEST_DATA[2000], 500);
+  mpx.compute(&TEST_DATA[2500], 500);
+
+  // std::cout << "Tick" << std::endl;
+    auto start = std::chrono::system_clock::now();
+
+    mpx.floss();
+
+    auto end = std::chrono::system_clock::now();
+     std::chrono::duration<float> diff2 = end - start;
+    printf("%.7f seconds to compute floss\n", diff2.count());
   // std::cout << "Tick" << std::endl;
   // mpx.compute(&TEST_DATA[3000], 1500);
   // std::cout << "Tick" << std::endl; // 4298.9072266
   // mpx.compute(&TEST_DATA[4500], 500);
   // std::cout << "Tick" << std::endl;
-  mpx.floss();
   // // }
 
-  float *res = mpx.get_floss();
-  float sum = 0;
+  // float *res = mpx.get_floss();
+  // float sum = 0;
 
-  for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
-    sum += res[i]; // < 0 ? 0 : res[i];
-    printf("%.1f, ", res[i]);
-  }
+  // for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
+  //   sum += res[i]; // < 0 ? 0 : res[i];
+  //   printf("%.1f, ", res[i]);
+  // }
 
-  printf("Done: %.7f\n", sum);
+  // printf("Dono: %.7f\n", sum);
 
   return 0;
 }

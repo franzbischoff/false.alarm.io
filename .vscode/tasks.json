@@ -1,0 +1,50 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "PlatformIO",
+			"task": "Remote Monitor",
+			"runOptions": {
+				"instanceLimit": 1
+			},
+			"problemMatcher": [
+				"$platformio"
+			],
+			"dependsOn": [
+				"Remote Upload (esp32)"
+			],
+			"detail": "Franz test",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			},
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			},
+			"label": "PlatformIO: Remote Monitor"
+		},
+		{
+			"type": "PlatformIO",
+			"task": "Remote Upload (esp32)",
+			"runOptions": {
+				"instanceLimit": 1
+			},
+			"problemMatcher": [
+				"$platformio"
+			],
+			"detail": "Franz build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"label": "PlatformIO: Remote Upload (esp32)"
+		}
+	]
+}
