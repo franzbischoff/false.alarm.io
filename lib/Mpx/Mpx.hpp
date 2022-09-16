@@ -10,10 +10,10 @@
 #include <Arduino.h>
 // #include <CircularBuffer.h>
 #else
-#include <memory>
 #include <cmath>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
+#include <memory>
 #endif
 
 #if !defined(NULL)
@@ -34,18 +34,18 @@ namespace MatrixProfile {
 class Mpx {
 public:
   // cppcheck-suppress noExplicitConstructor
-  Mpx(uint16_t window_size, float ez = 0.5, uint16_t time_constraint = 0, uint16_t buffer_size = 5000);
+  Mpx(uint16_t window_size, float ez = 0.5F, uint16_t time_constraint = 0U, uint16_t buffer_size = 5000U);
   ~Mpx(); // destructor
   // void Compute();
   bool new_data(const float *data, uint16_t size);
-  uint16_t compute(const float *data, uint16_t size = 0);
+  uint16_t compute(const float *data, uint16_t size);
   void floss();
   void movmean();
   void movsig();
-  void muinvn(uint16_t size = 0);
-  void mp_next(uint16_t size = 0);
-  void ddf(uint16_t size = 0);
-  void ddg(uint16_t size = 0);
+  void muinvn(uint16_t size = 0U);
+  void mp_next(uint16_t size = 0U);
+  void ddf(uint16_t size = 0U);
+  void ddg(uint16_t size = 0U);
   void ww_s();
 
   // Getters
@@ -58,7 +58,7 @@ private:
   const float ez_;
   const uint16_t time_constraint_;
   const uint16_t buffer_size_;
-  int16_t buffer_used_ = 0;
+  uint16_t buffer_used_ = 0U;
   int16_t buffer_start_ = 0;
 
   uint16_t profile_len_;
@@ -66,8 +66,8 @@ private:
 
   uint16_t exclusion_zone_;
 
-  float last_movsum_ = 0.0;
-  float last_mov2sum_ = 0.0;
+  float last_movsum_ = 0.0F;
+  float last_mov2sum_ = 0.0F;
 
   // arrays
   float *data_buffer_ = nullptr;
