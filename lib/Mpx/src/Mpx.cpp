@@ -29,7 +29,7 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
   }
 }
 
-void Mpx::movmean() {
+void Mpx::movmean()        {
 
   float accum = this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -94,6 +94,7 @@ void Mpx::movsig() {
   if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
     this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
   } else {
+    printf("DEBUG\n");
     this->vsig_[buffer_start_] = -1.0F;
   }
 
@@ -113,6 +114,7 @@ void Mpx::movsig() {
     if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
       this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
     } else {
+      printf("DEBUG\n");
       this->vsig_[i - this->window_size_ + 1U] = -1.0F;
     }
   }
@@ -344,9 +346,9 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
   for (uint16_t i = diag_start; i < diag_end; i++) {
     // this mess is just the inner_product but data_buffer_ needs to be minus vmmu_[i] before multiply
 
-    if ((i % 1000U) == 0U) {
-      printf("%u\n", i);
-    }
+    // if ((i % 1000U) == 0U) {
+    //   printf("%u\n", i);
+    // }
 
     float c = 0.0F;
 

@@ -1,341 +1,203 @@
-// This is a personal academic project. Dear PVS-Studio, please check it.
+#define TIMER_INTERRUPT_DEBUG 0
+#define _TIMERINTERRUPT_LOGLEVEL_ 0
 
-// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
+#define USE_TIMER_1 true
 
-#if defined(RASPBERRYPI)
 #include <Mpx.hpp>
-#include <stdio.h>
-// #include <wiringPi.h>
-#elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
-#include <Arduino.h>
-#include <Mpx.hpp>
-#include <chrono>
-#include <random>
-#include <cstdlib>
-// #include "avr8-stub.h"
-// #include "app_api.h" // only needed with flash breakpoints
-// #include <unity.h>
-#else
-#include <Mpx.hpp>
-#include <chrono>
-#include <iostream>
-#include <cstdlib>
-#include <cmath>
-#include <random>
-#include <ctime>
-#endif
-// // Type your code here, or load an example.
-// int main(void) {
-// #define LO -5
-// #define HI 5
+#include <Pipe.h>
+#include <SparkFun_Bio_Sensor_Hub_Library.hpp>
+#include <TimerInterrupt_Generic.h>
 
-// float rand_num;
-// srand (static_cast <unsigned> (time(0)));
-// for(int i = 0; i < 20; i++) {
+bool ready = true;
+// Reset pin, MFIO pin
+const uint16_t RES_PIN = RESPIN;
+const uint16_t MFIO_PIN = MFIOPIN;
+// Possible widths: 69, 118, 215, 411us
+const uint16_t WIDTH = 411;
+// Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
+// Not every sample amount is possible with every width; check out our hookup
+// guide for more information.
+const uint16_t SAMPLES = 400;
 
-//   rand_num = LO + static_cast<float>(rand()) /
-//                             (static_cast<float>(RAND_MAX / (HI - LO)));
+const uint32_t TIMER_INTERVAL = 4000; // 4ms = 250Hz
 
-// 	printf("%0.2f\n", rand_num);
-// }
-//   return rand_num;
-// }
+#define CORE_0 0
+#define CORE_1 1
 
-enum {
- WIN_SIZE = 75
-};
+enum { WIN_SIZE = 75 };
 
-float get_random(float min_val, float max_val, float div_val, std::default_random_engine generator) {
-  std::uniform_real_distribution<float> distribution(min_val, max_val);
-  float const rand_num = distribution(generator) / div_val;
-  return rand_num;
-}
+int16_t irRes = -3000;
 
-#if defined(RASPBERRYPI)
-int done = 0;
+float buffer[200];
+float data[200];
+uint8_t write_index = 0;
+uint8_t read_index = 0;
+bool buffer_ok = false;
+bool new_data = false;
 
+// define two tasks for Blink & AnalogRead
+void TaskCompute(void *pvParameters);
+void TaskReadSignal(void *pvParameters);
+
+QueueHandle_t queue;
+int queueSize = 10;
+
+// the setup function runs once when you press reset or power the board
 void setup() {
-  // debug_init();
-  Serial.begin(115200);
-}
 
+  queue = xQueueCreate(queueSize, sizeof(int));
+
+  if (queue == NULL) {
+    Serial.println("Error creating the queue");
+  }
+
+  // initialize serial communication at 115200 bits per second:
+  Serial.begin(115200);
+
+  for (int i = 0; i < 200; i++) {
+    buffer[i] = 0;
+  }
+
+  // Now set up two tasks to run independently.
+  xTaskCreatePinnedToCore(TaskCompute, // Task function
+                          "Compute",  // Just a name
+                          10000,     // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
+                          NULL,      // Parameter passed as input of the task (can be NULL)
+                          2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+                          NULL, // Task Handle (can be NULL)
+                          CORE_0);
+
+  xTaskCreatePinnedToCore(TaskReadSignal, // Task function
+                          "ReadSignal", // Just a name
+                          10000,        // Stack size in `word`s
+                          NULL,         // Parameter passed as input of the task (can be NULL)
+                          2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+                          NULL, // Task Handle (can be NULL)
+                          CORE_1);
+
+  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
+}
 
 void loop() {
-
-  if (done)
-    return;
-
-  MPX.compute_stream();
-  float *res = MPX.get_matrix();
-
-  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-    Serial.printf("%.2f, ", (float)res[i]);
-  }
-  Serial.println();
-
-  int16_t *idxs = MPX.get_indexes();
-
-  for (uint16_t i = 0; i < DATA_SIZE - WIN_SIZE + 1; i++) {
-    Serial.printf("%d, ", (int16_t)idxs[i]);
-  }
-  Serial.println();
-
-  done = 1;
+  // Empty. Things are done in Tasks.
 }
 
-int main(int argc, char **argv) {
-  MPX.compute_stream();
+/*--------------------------------------------------*/
+/*---------------------- Tasks ---------------------*/
+/*--------------------------------------------------*/
 
-  return 0;
-}
-#elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
-
-// pio remote run -e esp32 -t upload
-// pio remote device monitor -b 115200
-
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(LED_BUILTIN, OUTPUT);
-  // analogWriteFreq(1);
-  // analogReadResolution(2);
-}
-
-
-void loop() {
-
-  static int done = 0;
-  static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
-
-  digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
-  delay(5000);                     // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
-  delay(1000);
-
-  if (done == 0) {
-
-    auto start = std::chrono::system_clock::now();
-
-    float inbuf[1000];
-
-    std::default_random_engine generator(2002);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    auto end = std::chrono::system_clock::now();
-
-    std::chrono::duration<float> diff2 = end - start;
-
-    Serial.printf("%.2f seconds to compute\n", diff2.count());
-
-    start = std::chrono::system_clock::now();
-
-    mpx.floss();
-
-    end = std::chrono::system_clock::now();
-
-    diff2 = end - start;
-
-    Serial.printf("%.2f seconds to compute floss\n", diff2.count());
-
-    digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
-    delay(1000);                     // wait for a second
-    digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
-
-    start = std::chrono::system_clock::now();
-
-    float *res = mpx.get_floss();
-    float sum = 0;
-
-    for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
-      sum += res[i]; // < 0 ? 0 : res[i];
-    }
-
-    end = std::chrono::system_clock::now();
-
-    diff2 = end - start;
-
-    Serial.printf("%.2f seconds to sum up\n", diff2.count());
-
-    digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level)
-    delay(1000);                     // wait for a second
-    digitalWrite(LED_BUILTIN, LOW);  // turn the LED off by making the voltage LOW
-
-    Serial.printf("MP sum is %.7f\n", sum);
-    Serial.println();
-    done = 1;
-  } else {
-    float inbuf[1000];
-
-    std::default_random_engine generator(2002);
-
-    for (float &i : inbuf) {
-      i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-    }
-
-    mpx.compute(inbuf, 1000);
-
-    auto start = std::chrono::system_clock::now();
-
-    mpx.floss();
-
-    auto end = std::chrono::system_clock::now();
-
-    std::chrono::duration<float> diff2 = end - start;
-
-    Serial.printf("%.2f seconds to compute floss\n", diff2.count());
-  }
-}
-#else
-int main(int argc, char **argv) {
-
-  // auto start = std::chrono::system_clock::now();
-
-  std::cout << "Tick" << std::endl;
+void TaskCompute(void *pvParameters) // This is a task.
+{
+  (void)pvParameters;
 
   static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
+  bool init = false;
+  uint8_t size = 200;
 
-  // for (uint16_t i = 0; i < 200; i++) {
-  // mpx.initial_data(TEST_DATA, 2000); // 2: 1799.1505127; 3: 2799.3811035; 4: 3800.0820312; 5: 4799.7426758
-  // mpx.compute(TEST_DATA, 2000); //              2: 93599.4921875; 3: 142240.1250000; 4: 190884.9218750; 5:
-  // 239518.7656250
-  float inbuf[1000];
+  for (;;) // A Task shall never return or exit.
+  {
+    if (init) {
+      if (!ready && new_data) {
+        for (size = 0; size < 200; size++) {
+          data[size] = buffer[read_index++];
+          if (read_index >= 200) {
+            read_index = 0;
+          }
+          if (read_index == write_index) {
+            break;
+          }
+        }
+        mpx.compute(data, size);
+        for (int i = 0; i < size; i++) {
+          Serial.println(size);
+        }
+      }
+    } else if (buffer_ok) {
+      mpx.compute(buffer, size);
+      read_index = 0;
+      init = true;
+    }
 
-  std::default_random_engine const generator(2002);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
+    // mpx.floss();
+    vTaskDelay(1); // one tick delay (15ms) in between reads for stability
   }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  mpx.compute(inbuf, 1000);
-
-  for (float &i : inbuf) {
-    i = get_random(-100000.0F, 1000000.0F, 20000.0F, generator);
-  }
-
-  float testbuf[2] = {0.1, 0.3};
-
-  mpx.compute(testbuf, 2);
-
-  // std::cout << "Tick" << std::endl;
-  std::chrono::system_clock::time_point const start = std::chrono::system_clock::now();
-
-  mpx.floss();
-
-  std::chrono::system_clock::time_point const end = std::chrono::system_clock::now();
-  std::chrono::duration<float> const diff2 = end - start;
-  printf("%.7f seconds to compute floss\n", diff2.count());
-  // std::cout << "Tick" << std::endl;
-  // mpx.compute(&TEST_DATA[3000], 1500);
-  // std::cout << "Tick" << std::endl; // 4298.9072266
-  // mpx.compute(&TEST_DATA[4500], 500);
-  // std::cout << "Tick" << std::endl;
-  // // }
-
-  // float *res = mpx.get_floss();
-  // float sum = 0;
-
-  // for (uint16_t i = 0; i < 5000 - WIN_SIZE + 1; i++) {
-  //   sum += res[i]; // < 0 ? 0 : res[i];
-  //   printf("%.1f, ", res[i]);
-  // }
-
-  // printf("Dono: %.7f\n", sum);
-
-  return 0;
 }
-#endif // RASPBERRYPI
+
+bool IRAM_ATTR control_irq(void *t) {
+  (void)t;
+  ready = true;
+  return true;
+}
+
+void TaskReadSignal(void *pvParameters) // This is a task.
+{
+  (void)pvParameters;
+
+  ESP32Timer ITimer1(0);
+
+  // Takes address, reset pin, and MFIO pin.
+  SparkFun_Bio_Sensor_Hub bioHub(RES_PIN, MFIO_PIN);
+  bioData body;
+
+  // short period filter
+  const float F_WINDOW = 25.0;
+  const float EPSF = 0.05;
+  const float ALPHA = powf(EPSF, 1.0F / F_WINDOW);
+
+  // large (wander) period filter
+  const float F_WINDOW2 = 125.0;
+  const float ALPHAL = powf(EPSF, 1.0F / F_WINDOW2);
+
+  float irSum = 0.0;
+  float irNum = 0.0;
+  float irSum2 = 0.0;
+  float irNum2 = 0.0;
+
+  Wire.begin();
+  bioHub.begin();
+
+  bioHub.configSensorBpm(MODE_ONE);
+  bioHub.setPulseWidth(WIDTH);   // 18 bits resolution (0-262143)
+  bioHub.setSampleRate(SAMPLES); // 18 bits resolution (0-262143)
+
+  ITimer1.attachInterruptInterval(TIMER_INTERVAL, control_irq);
+  delay(4000); // Wait for sensor to stabilize
+
+  for (;;) {
+    body = bioHub.readSensorBpm(); // Read the sensor outside the IRQ, to avoid overload
+    if (ready) {
+      float irLed = (float)body.irLed;
+      new_data = false;
+
+      if (irLed > 20000.0F) {
+        irSum = irSum * ALPHA + irLed;
+        irNum = irNum * ALPHA + 1.0F;
+        irSum2 = irSum2 * ALPHAL + irLed;
+        irNum2 = irNum2 * ALPHAL + 1.0F;
+        irRes = (int16_t)(10.0F * (irSum / irNum - irSum2 / irNum2));
+        if (irRes > 2047 || irRes < -2048) {
+          irRes = -3000;
+        } else {
+          if (!buffer_ok) {
+            buffer[write_index] = (float)irRes / 100.0F;
+            write_index++;
+            if (write_index == 200) {
+              buffer_ok = true;
+              new_data = true;
+              write_index = 0;
+            }
+          } else {
+            buffer[write_index] = (float)irRes / 100.0F;
+            write_index++;
+            if (write_index == 200) {
+              write_index = 0;
+            }
+            new_data = true;
+          }
+        }
+      }
+      ready = false;
+    }
+    vTaskDelay(1); // one tick delay (15ms) in between reads for stability
+  }
+}

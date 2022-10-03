@@ -1,5 +1,5 @@
 {
-  "name": "MPX",
+  "name": "Mpx",
   "version": "1.0.0",
   "description": "Library for computing streaming matrix profile",
   "keywords": "matrixprofile, mpx, timeseries",
@@ -17,5 +17,10 @@
     "native",
     "raspberrypi"
   ],
-  "headers": "Mpx.hpp"
+  "headers": ["Mpx.hpp", "Pipe.h"],
+  "build": {
+    "flags": [
+      "-std=c99"
+    ]
+  }
 }
