@@ -8,66 +8,45 @@
 #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
 #include <TimerInterrupt_Generic.h>
 
-bool ready = true;
-// Reset pin, MFIO pin
-const uint16_t RES_PIN = RESPIN;
-const uint16_t MFIO_PIN = MFIOPIN;
-// Possible widths: 69, 118, 215, 411us
-const uint16_t WIDTH = 411;
-// Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
-// Not every sample amount is possible with every width; check out our hookup
-// guide for more information.
-const uint16_t SAMPLES = 400;
+bool int_ready = true; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-const uint32_t TIMER_INTERVAL = 4000; // 4ms = 250Hz
-
-#define CORE_0 0
-#define CORE_1 1
-
-enum { WIN_SIZE = 75 };
-
-int16_t irRes = -3000;
+enum { CORE_0 = 0, CORE_1 = 1 };
 
 // define two tasks for Blink & AnalogRead
-void TaskCompute(void *pvParameters);
-void TaskReadSignal(void *pvParameters);
+void task_compute(void *pv_parameters);
+void task_read_signal(void *pv_parameters);
 
-QueueHandle_t queue;
-uint8_t queue_size = 255;
-bool buffer_init = false;
-float buffer[200];
+QueueHandle_t queue;      // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 // the setup function runs once when you press reset or power the board
 void setup() {
 
+  uint8_t queue_size = 255;
   // initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
 
   queue = xQueueCreate(queue_size, sizeof(float));
 
-  if (queue == NULL) {
+  if (queue == nullptr) {
     Serial.println("Error creating the queue");
   }
 
-  for (uint8_t i = 0; i < 200; i++) {
-    buffer[i] = 0.0F;
-  }
-
   // Now set up two tasks to run independently.
-  xTaskCreatePinnedToCore(TaskCompute, // Task function
-                          "Compute",   // Just a name
+  xTaskCreatePinnedToCore(task_compute, // Task function
+                          "Compute",    // Just a name
                           20000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          NULL,  // Parameter passed as input of the task (can be NULL)
+                          nullptr, // Parameter passed as input of the task (can be NULL)
                           2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          NULL, // Task Handle (can be NULL)
+                          nullptr, // Task Handle (can be NULL)
                           CORE_0);
 
-  xTaskCreatePinnedToCore(TaskReadSignal, // Task function
-                          "ReadSignal",   // Just a name
-                          20000,          // Stack size in `word`s
-                          NULL,           // Parameter passed as input of the task (can be NULL)
+  xTaskCreatePinnedToCore(task_read_signal, // Task function
+                          "ReadSignal",     // Just a name
+                          20000,            // Stack size in `word`s
+                          nullptr,          // Parameter passed as input of the task (can be NULL)
                           2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          NULL, // Task Handle (can be NULL)
+                          nullptr, // Task Handle (can be NULL)
                           CORE_1);
 
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
@@ -81,120 +60,145 @@ void loop() {
 /*---------------------- Tasks ---------------------*/
 /*--------------------------------------------------*/
 
-void TaskCompute(void *pvParameters) // This is a task.
+void task_compute(void *pv_parameters) // This is a task.
 {
-  (void)pvParameters;
+  (void)pv_parameters;
 
-  static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
-  uint8_t size = 0;
+  // const uint16_t win_size = 75;
+  // const uint16_t ez = 38;
+  const uint16_t win_size = 90;
+  const uint16_t ez = 45;
+  float buffer[200];
+  float data = 0.0F;
+  uint8_t recv_count = 0;
+
+  for (uint8_t i = 0; i < 200; i++) {
+    buffer[i] = 0.0F;
+  }
+
+  MatrixProfile::Mpx mpx(win_size, 0.5F, 0, 5000);
 
   for (;;) // A Task shall never return or exit.
   {
-    if (buffer_init) {
-      float data = 0.0F;
-      size = 0;
+    if (buffer_init) { // wait for buffer to be initialized
+      recv_count = 0;
 
       for (uint8_t i = 0; i < 200; i++) {
         if (xQueueReceive(queue, &data, 0)) {
-          buffer[i] = data;
-          size = i + 1;
+          buffer[i] = data; // read data from queue
+          recv_count = i + 1;
         } else {
-          break;
+          break; // no more data in queue
         }
       }
 
-      if (size > 0) {
-        mpx.compute(buffer, size); /////////////////
-        float *matrix = mpx.get_matrix();
-        for (uint8_t i = 0; i < size; i++) {
-          printf("%.3f, %.3f\n", buffer[i], matrix[5000 - WIN_SIZE * 3 - size + i]);
+      if (recv_count > 0) {
+        mpx.compute(buffer, recv_count); /////////////////
+        mpx.floss();
+        const float *matrix = mpx.get_matrix();
+        const float *floss = mpx.get_floss();
+
+        for (uint8_t i = 0; i < recv_count; i++) {
+          printf("%.3f, %.3f, %.3f\n", buffer[i], matrix[5000 - win_size - ez - recv_count + i], floss[3000 - recv_count + i]);
         }
+        // for (uint8_t i = 0; i < 50; i++) {
+        //   printf("%.3f\n", matrix[5000 - win_size - 100 + i]);
+        // }
+        // printf("-----\n");
       }
     } else {
-      printf("-1, -1\n");
-      vTaskDelay((portTICK_PERIOD_MS * 2));
+      // printf("-1, -1\n");
+      vTaskDelay((portTICK_PERIOD_MS * 2)); // for stability
     }
     // mpx.floss();
-    vTaskDelay((portTICK_PERIOD_MS * 1)); // one tick delay (15ms) in between reads for stability
+    vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
   }
 }
 
 bool IRAM_ATTR control_irq(void *t) {
   (void)t;
-  ready = true;
+  int_ready = true;
   return true;
 }
 
-void TaskReadSignal(void *pvParameters) // This is a task.
+void task_read_signal(void *pv_parameters) // This is a task.
 {
-  (void)pvParameters;
+  (void)pv_parameters;
 
-  ESP32Timer ITimer1(0);
-
-  // Takes address, reset pin, and MFIO pin.
-  SparkFun_Bio_Sensor_Hub bioHub(RES_PIN, MFIO_PIN);
-  bioData body;
+  // Reset pin, MFIO pin
+  const uint16_t res_pin = RESPIN;
+  const uint16_t mfio_pin = MFIOPIN;
+  // Possible widths: 69, 118, 215, 411us
+  const uint16_t width = 411;
+  // Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
+  // Not every sample amount is possible with every width; check out our hookup
+  // guide for more information.
+  const uint16_t samples = 400;
+  const uint32_t timer_interval = 4000; // 4ms = 250Hz
 
   // short period filter
-  const float F_WINDOW = 25.0;
-  const float EPSF = 0.05;
-  const float ALPHA = powf(EPSF, 1.0F / F_WINDOW);
+  const float s_window = 25.0F;
+  const float eps_f = 0.05F;
+  const float alpha = powf(eps_f, 1.0F / s_window);
 
   // large (wander) period filter
-  const float F_WINDOW2 = 125.0;
-  const float ALPHAL = powf(EPSF, 1.0F / F_WINDOW2);
+  const float l_window = 125.0F;
+  const float l_alpha = powf(eps_f, 1.0F / l_window);
 
-  float irSum = 0.0;
-  float irNum = 0.0;
-  float irSum2 = 0.0;
-  float irNum2 = 0.0;
+  ESP32Timer timer1(0);
 
-  Wire.begin();
-  bioHub.begin();
-
-  bioHub.configSensor();
-  bioHub.setPulseWidth(WIDTH);   // 18 bits resolution (0-262143)
-  bioHub.setSampleRate(SAMPLES); // 18 bits resolution (0-262143)
-
-  ITimer1.attachInterruptInterval(TIMER_INTERVAL, control_irq);
-  delay(1000); // Wait for sensor to stabilize
+  // Takes address, reset pin, and MFIO pin.
+  SparkFun_Bio_Sensor_Hub bio_hub(res_pin, mfio_pin);
+  bioData body;
 
   uint8_t initial_counter = 0;
-  float irLed = 0.0F;
+  uint32_t ir_led = 0;
+
+  float ir_res = 0.0F;
+  float ir_sum = 0.0F;
+  float ir_num = 0.0F;
+  float ir_sum2 = 0.0F;
+  float ir_num2 = 0.0F;
+
+  Wire.begin();
+  bio_hub.begin();
+
+  bio_hub.configSensor();
+  bio_hub.setPulseWidth(width);   // 18 bits resolution (0-262143)
+  bio_hub.setSampleRate(samples); // 18 bits resolution (0-262143)
+
+  timer1.attachInterruptInterval(timer_interval, control_irq);
+  delay(1000); // Wait for sensor to stabilize
 
   for (;;) {
-    body = bioHub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
-    if (ready) {
-      irLed = (float)body.irLed;
+    body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
+    if (int_ready) {
+      ir_led = body.irLed;
 
-      if (irLed > 10000.0F) {
-        irSum = irSum * ALPHA + irLed;
-        irNum = irNum * ALPHA + 1.0F;
-        irSum2 = irSum2 * ALPHAL + irLed;
-        irNum2 = irNum2 * ALPHAL + 1.0F;
-        irRes = (int16_t)(10.0F * (irSum / irNum - irSum2 / irNum2));
-        // if (irRes > 2047 || irRes < -2048) {
-        //   irRes = -3000;
-        // } else {
-          irLed = (float)irRes / 200.0F;
+      if (ir_led > 10000) {
+        ir_sum = ir_sum * alpha + ir_led;
+        ir_num = ir_num * alpha + 1.0F;
+        ir_sum2 = ir_sum2 * l_alpha + ir_led;
+        ir_num2 = ir_num2 * l_alpha + 1.0F;
+        ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
+        ir_res /= 20.0F;
 
-          if (xQueueSend(queue, &irLed, (portTICK_PERIOD_MS * 200))) { // SUCCESS
-            if (!buffer_init) {
-              if (++initial_counter >= 200) {
-                buffer_init = true; // this is read by the receiver task
-                printf("Start\n");
-              }
+        if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
+          if (!buffer_init) {
+            if (++initial_counter >= 200) {
+              buffer_init = true; // this is read by the receiver task
+              printf("[Producer] Start\n");
             }
-          } else {
-            printf("Error sending to the queue\n");
           }
-        // }
+        } else {
+          printf("[Producer] Error sending to the queue\n");
+        }
       } else {
-        printf("IR: %d\n", body.irLed);
-        vTaskDelay((portTICK_PERIOD_MS * 1));
+        printf("[Producer] IR: %d\n", body.irLed);
+        vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
       }
-      ready = false;
+      int_ready = false;
     }
-    vTaskDelay((portTICK_PERIOD_MS * 1)); // one tick delay (15ms) in between reads for stability
+    vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
   }
 }

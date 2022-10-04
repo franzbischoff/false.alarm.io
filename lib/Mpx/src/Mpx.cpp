@@ -29,7 +29,7 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
   }
 }
 
-void Mpx::movmean()        {
+void Mpx::movmean() {
 
   float accum = this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -271,6 +271,12 @@ void Mpx::ww_s() {
 // IAC can be hard coded later
 // cppcheck-suppress unusedFunction
 void Mpx::floss() {
+
+  for (uint16_t i = 0U; i < this->profile_len_; i++) {
+    floss_[i] = 0.0F;
+  }
+
+
   for (uint16_t i = 0U; i < this->profile_len_; i++) {
     int16_t const j = vprofile_index_[i];
 
@@ -282,8 +288,8 @@ void Mpx::floss() {
       printf("i = %d ; j = %d \n", i, j);
     }
 
-    // floss_[MIN(i, j)] += 1.0;
-    // floss_[MAX(i, j)] -= 1.0;
+    // floss_[MIN(i, j)] += 1.0F;
+    // floss_[MAX(i, j)] -= 1.0F;
     // RMP, i is always < j
     floss_[i] += 1.0F;
     floss_[j] -= 1.0F;
@@ -374,7 +380,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       c += vddf_[offset] * vddg_[off_diag] + vddf_[off_diag] * vddg_[offset];
 
       if ((vsig_[offset] < 0.0F) || (vsig_[off_diag] < 0.0F)) { // wild sig, misleading
-        printf("Wild sig\n");
+        // printf(">WS\n");
         continue;
       }
 
@@ -384,7 +390,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       if (c_cmp > vmatrix_profile_[off_diag]) {
         // printf("%f\n", c_cmp);
         vmatrix_profile_[off_diag] = c_cmp;
-        vprofile_index_[off_diag] = (int16_t)(offset + 1U);
+        vprofile_index_[off_diag] = (int16_t)(offset);// + 1U);
       }
     }
   }
