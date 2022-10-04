@@ -4,7 +4,7 @@
 #define USE_TIMER_1 true
 
 #include <Mpx.hpp>
-#include <Pipe.h>
+#include <freertos/queue.h>
 #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
 #include <TimerInterrupt_Generic.h>
 
@@ -28,49 +28,44 @@ enum { WIN_SIZE = 75 };
 
 int16_t irRes = -3000;
 
-float buffer[200];
-float data[200];
-uint8_t write_index = 0;
-uint8_t read_index = 0;
-bool buffer_ok = false;
-bool new_data = false;
-
 // define two tasks for Blink & AnalogRead
 void TaskCompute(void *pvParameters);
 void TaskReadSignal(void *pvParameters);
 
 QueueHandle_t queue;
-int queueSize = 10;
+uint8_t queue_size = 255;
+bool buffer_init = false;
+float buffer[200];
 
 // the setup function runs once when you press reset or power the board
 void setup() {
 
-  queue = xQueueCreate(queueSize, sizeof(int));
+  // initialize serial communication at 115200 bits per second:
+  Serial.begin(115200);
+
+  queue = xQueueCreate(queue_size, sizeof(float));
 
   if (queue == NULL) {
     Serial.println("Error creating the queue");
   }
 
-  // initialize serial communication at 115200 bits per second:
-  Serial.begin(115200);
-
-  for (int i = 0; i < 200; i++) {
-    buffer[i] = 0;
+  for (uint8_t i = 0; i < 200; i++) {
+    buffer[i] = 0.0F;
   }
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(TaskCompute, // Task function
-                          "Compute",  // Just a name
-                          10000,     // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          NULL,      // Parameter passed as input of the task (can be NULL)
+                          "Compute",   // Just a name
+                          20000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
+                          NULL,  // Parameter passed as input of the task (can be NULL)
                           2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
                           NULL, // Task Handle (can be NULL)
                           CORE_0);
 
   xTaskCreatePinnedToCore(TaskReadSignal, // Task function
-                          "ReadSignal", // Just a name
-                          10000,        // Stack size in `word`s
-                          NULL,         // Parameter passed as input of the task (can be NULL)
+                          "ReadSignal",   // Just a name
+                          20000,          // Stack size in `word`s
+                          NULL,           // Parameter passed as input of the task (can be NULL)
                           2, // Priority, with 3 (config MAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
                           NULL, // Task Handle (can be NULL)
                           CORE_1);
@@ -91,35 +86,36 @@ void TaskCompute(void *pvParameters) // This is a task.
   (void)pvParameters;
 
   static MatrixProfile::Mpx mpx(WIN_SIZE, 0.5, 0, 5000);
-  bool init = false;
-  uint8_t size = 200;
+  uint8_t size = 0;
 
   for (;;) // A Task shall never return or exit.
   {
-    if (init) {
-      if (!ready && new_data) {
-        for (size = 0; size < 200; size++) {
-          data[size] = buffer[read_index++];
-          if (read_index >= 200) {
-            read_index = 0;
-          }
-          if (read_index == write_index) {
-            break;
-          }
-        }
-        mpx.compute(data, size);
-        for (int i = 0; i < size; i++) {
-          Serial.println(size);
+    if (buffer_init) {
+      float data = 0.0F;
+      size = 0;
+
+      for (uint8_t i = 0; i < 200; i++) {
+        if (xQueueReceive(queue, &data, 0)) {
+          buffer[i] = data;
+          size = i + 1;
+        } else {
+          break;
         }
       }
-    } else if (buffer_ok) {
-      mpx.compute(buffer, size);
-      read_index = 0;
-      init = true;
-    }
 
+      if (size > 0) {
+        mpx.compute(buffer, size); /////////////////
+        float *matrix = mpx.get_matrix();
+        for (uint8_t i = 0; i < size; i++) {
+          printf("%.3f, %.3f\n", buffer[i], matrix[5000 - WIN_SIZE * 3 - size + i]);
+        }
+      }
+    } else {
+      printf("-1, -1\n");
+      vTaskDelay((portTICK_PERIOD_MS * 2));
+    }
     // mpx.floss();
-    vTaskDelay(1); // one tick delay (15ms) in between reads for stability
+    vTaskDelay((portTICK_PERIOD_MS * 1)); // one tick delay (15ms) in between reads for stability
   }
 }
 
@@ -156,48 +152,49 @@ void TaskReadSignal(void *pvParameters) // This is a task.
   Wire.begin();
   bioHub.begin();
 
-  bioHub.configSensorBpm(MODE_ONE);
+  bioHub.configSensor();
   bioHub.setPulseWidth(WIDTH);   // 18 bits resolution (0-262143)
   bioHub.setSampleRate(SAMPLES); // 18 bits resolution (0-262143)
 
   ITimer1.attachInterruptInterval(TIMER_INTERVAL, control_irq);
-  delay(4000); // Wait for sensor to stabilize
+  delay(1000); // Wait for sensor to stabilize
+
+  uint8_t initial_counter = 0;
+  float irLed = 0.0F;
 
   for (;;) {
-    body = bioHub.readSensorBpm(); // Read the sensor outside the IRQ, to avoid overload
+    body = bioHub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
     if (ready) {
-      float irLed = (float)body.irLed;
-      new_data = false;
+      irLed = (float)body.irLed;
 
-      if (irLed > 20000.0F) {
+      if (irLed > 10000.0F) {
         irSum = irSum * ALPHA + irLed;
         irNum = irNum * ALPHA + 1.0F;
         irSum2 = irSum2 * ALPHAL + irLed;
         irNum2 = irNum2 * ALPHAL + 1.0F;
         irRes = (int16_t)(10.0F * (irSum / irNum - irSum2 / irNum2));
-        if (irRes > 2047 || irRes < -2048) {
-          irRes = -3000;
-        } else {
-          if (!buffer_ok) {
-            buffer[write_index] = (float)irRes / 100.0F;
-            write_index++;
-            if (write_index == 200) {
-              buffer_ok = true;
-              new_data = true;
-              write_index = 0;
+        // if (irRes > 2047 || irRes < -2048) {
+        //   irRes = -3000;
+        // } else {
+          irLed = (float)irRes / 200.0F;
+
+          if (xQueueSend(queue, &irLed, (portTICK_PERIOD_MS * 200))) { // SUCCESS
+            if (!buffer_init) {
+              if (++initial_counter >= 200) {
+                buffer_init = true; // this is read by the receiver task
+                printf("Start\n");
+              }
             }
           } else {
-            buffer[write_index] = (float)irRes / 100.0F;
-            write_index++;
-            if (write_index == 200) {
-              write_index = 0;
-            }
-            new_data = true;
+            printf("Error sending to the queue\n");
           }
-        }
+        // }
+      } else {
+        printf("IR: %d\n", body.irLed);
+        vTaskDelay((portTICK_PERIOD_MS * 1));
       }
       ready = false;
     }
-    vTaskDelay(1); // one tick delay (15ms) in between reads for stability
+    vTaskDelay((portTICK_PERIOD_MS * 1)); // one tick delay (15ms) in between reads for stability
   }
 }

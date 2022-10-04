@@ -17,10 +17,5 @@
     "native",
     "raspberrypi"
   ],
-  "headers": ["Mpx.hpp", "Pipe.h"],
-  "build": {
-    "flags": [
-      "-std=c99"
-    ]
-  }
+  "headers": ["Mpx.hpp"]
 }
