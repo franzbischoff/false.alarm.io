@@ -162,7 +162,7 @@ bool Mpx::new_data(const float *data, uint16_t size) {
   if ((2U * size) > buffer_size_) {
     printf("Data size is too large\n");
     return false;
-  } else if (size < (2U * window_size_) && buffer_used_ < window_size_) {
+  } else if (size < (window_size_) && buffer_used_ < window_size_) {
     printf("Data size is too small\n");
     return false;
   } else {
@@ -205,7 +205,12 @@ void Mpx::mp_next(uint16_t size) {
   // update 1 step
   for (uint16_t i = 0; i < j; i++) {
     vmatrix_profile_[i] = vmatrix_profile_[i + size];
-    vprofile_index_[i] = (int16_t)(vprofile_index_[i + size] - size); // the index must be reduced
+    // avoid too negative values
+    if(vprofile_index_[i + size] < 0) {
+      vprofile_index_[i] = -1;
+    } else {
+      vprofile_index_[i] = (int16_t)vprofile_index_[i + size] - size; // the index must be reduced
+    }
   }
 
   for (uint16_t i = j; i < profile_len_; i++) {
@@ -276,7 +281,6 @@ void Mpx::floss() {
     floss_[i] = 0.0F;
   }
 
-
   for (uint16_t i = 0U; i < this->profile_len_; i++) {
     int16_t const j = vprofile_index_[i];
 
@@ -314,6 +318,7 @@ void Mpx::floss() {
       // iac = 0.8245 * powf(i * x, 0.94) * powf(1.0 - powf(i * x, 1.94), 0.7) * len;
       const float idx = (float)i * x;
       iac = powf(idx, 1.08F) * powf(1.0F - idx, 0.64F) * llen; // faster
+      // iac = a * b * powf(idx, (a - 1)) * powf(1 - powf(idx, a), (b - 1)) * len / 4.035477;
       const float res = floss_[i] / iac;
       floss_[i] = res > 1.0F ? 1.0F : res;
     }
@@ -390,7 +395,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       if (c_cmp > vmatrix_profile_[off_diag]) {
         // printf("%f\n", c_cmp);
         vmatrix_profile_[off_diag] = c_cmp;
-        vprofile_index_[off_diag] = (int16_t)(offset);// + 1U);
+        vprofile_index_[off_diag] = (int16_t)(offset + 1U);
       }
     }
   }

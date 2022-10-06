@@ -3,6 +3,8 @@
 
 #define USE_TIMER_1 true
 
+#define BUFFER_SIZE 160 // must be at least 2x the window_size
+
 #include <Mpx.hpp>
 #include <freertos/queue.h>
 #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
@@ -22,7 +24,7 @@ bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-var
 // the setup function runs once when you press reset or power the board
 void setup() {
 
-  uint8_t queue_size = 255;
+  uint16_t queue_size = BUFFER_SIZE + 20;
   // initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
 
@@ -66,13 +68,13 @@ void task_compute(void *pv_parameters) // This is a task.
 
   // const uint16_t win_size = 75;
   // const uint16_t ez = 38;
-  const uint16_t win_size = 90;
-  const uint16_t ez = 45;
-  float buffer[200];
+  const uint16_t win_size = 75;
+  const uint16_t ez = 38;
+  float buffer[BUFFER_SIZE];
   float data = 0.0F;
   uint8_t recv_count = 0;
 
-  for (uint8_t i = 0; i < 200; i++) {
+  for (uint8_t i = 0; i < BUFFER_SIZE; i++) {
     buffer[i] = 0.0F;
   }
 
@@ -83,7 +85,7 @@ void task_compute(void *pv_parameters) // This is a task.
     if (buffer_init) { // wait for buffer to be initialized
       recv_count = 0;
 
-      for (uint8_t i = 0; i < 200; i++) {
+      for (uint8_t i = 0; i < BUFFER_SIZE; i++) {
         if (xQueueReceive(queue, &data, 0)) {
           buffer[i] = data; // read data from queue
           recv_count = i + 1;
@@ -99,7 +101,8 @@ void task_compute(void *pv_parameters) // This is a task.
         const float *floss = mpx.get_floss();
 
         for (uint8_t i = 0; i < recv_count; i++) {
-          printf("%.3f, %.3f, %.3f\n", buffer[i], matrix[5000 - win_size - ez - recv_count + i], floss[3000 - recv_count + i]);
+          printf("%.3f, %.3f\n", buffer[i], /*matrix[5000 - win_size - ez - recv_count + i],*/
+                 floss[3750]/*, recv_count*/);
         }
         // for (uint8_t i = 0; i < 50; i++) {
         //   printf("%.3f\n", matrix[5000 - win_size - 100 + i]);
@@ -171,8 +174,8 @@ void task_read_signal(void *pv_parameters) // This is a task.
   delay(1000); // Wait for sensor to stabilize
 
   for (;;) {
-    body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
     if (int_ready) {
+      body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
       ir_led = body.irLed;
 
       if (ir_led > 10000) {
@@ -185,7 +188,7 @@ void task_read_signal(void *pv_parameters) // This is a task.
 
         if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
           if (!buffer_init) {
-            if (++initial_counter >= 200) {
+            if (++initial_counter >= BUFFER_SIZE) {
               buffer_init = true; // this is read by the receiver task
               printf("[Producer] Start\n");
             }
