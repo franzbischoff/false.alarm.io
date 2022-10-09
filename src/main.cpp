@@ -74,11 +74,14 @@ void task_compute(void *pv_parameters) // This is a task.
   float data = 0.0F;
   uint8_t recv_count = 0;
 
+  float last_floss = 0;
+
   for (uint8_t i = 0; i < BUFFER_SIZE; i++) {
     buffer[i] = 0.0F;
   }
 
   MatrixProfile::Mpx mpx(win_size, 0.5F, 0, 5000);
+  mpx.floss_iac();
 
   for (;;) // A Task shall never return or exit.
   {
@@ -97,18 +100,33 @@ void task_compute(void *pv_parameters) // This is a task.
       if (recv_count > 0) {
         mpx.compute(buffer, recv_count); /////////////////
         mpx.floss();
-        const float *matrix = mpx.get_matrix();
-        const float *floss = mpx.get_floss();
+
+        float *floss = mpx.get_floss();
+
+        // if(mpx.get_buffer_used() >= 5000) {
+
+        //   if(last_floss > 0.9999F && floss[3150] < 0.5F) {
+        //     float *matrix = mpx.get_matrix();
+        //     float *data_buf = mpx.get_data_buffer();
+        //     int16_t *indexes = mpx.get_indexes();
+        //     printf("idx,data,mp,floss,mpi\n");
+
+        //     for (uint16_t i = 0; i < 5000 - win_size + 1; i++) {
+        //       printf("%d, %.3f, %.3f, %.3f, %d\n", i, data_buf[i], matrix[i],
+        //             floss[i], indexes[i]);
+        //     }
+        //     printf("------\n");
+        //   }
+
+        //   last_floss = floss[3000];
+        // }
 
         for (uint8_t i = 0; i < recv_count; i++) {
           printf("%.3f, %.3f\n", buffer[i], /*matrix[5000 - win_size - ez - recv_count + i],*/
-                 floss[3750]/*, recv_count*/);
+                 floss[3000+i]/*, recv_count*/);
         }
-        // for (uint8_t i = 0; i < 50; i++) {
-        //   printf("%.3f\n", matrix[5000 - win_size - 100 + i]);
-        // }
-        // printf("-----\n");
       }
+      // printf("[Consumer] %d\n", recv_count);
     } else {
       // printf("-1, -1\n");
       vTaskDelay((portTICK_PERIOD_MS * 2)); // for stability

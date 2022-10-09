@@ -12,6 +12,8 @@
 #else
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <cstring>
 #include <memory>
 #endif
@@ -39,6 +41,7 @@ public:
   // void Compute();
   bool new_data(const float *data, uint16_t size);
   uint16_t compute(const float *data, uint16_t size);
+  void floss_iac();
   void floss();
   void movmean();
   void movsig();
@@ -49,9 +52,11 @@ public:
   void ww_s();
 
   // Getters
+  float *get_data_buffer() { return data_buffer_; };
   float *get_matrix() { return vmatrix_profile_; };
   int16_t *get_indexes() { return vprofile_index_; };
   float *get_floss() { return floss_; };
+  uint16_t get_buffer_used() { return buffer_used_; };
 
 private:
   const uint16_t window_size_;
@@ -73,6 +78,7 @@ private:
   float *data_buffer_ = nullptr;
   float *vmatrix_profile_ = nullptr;
   int16_t *vprofile_index_ = nullptr;
+  float *iac_ = nullptr;
   float *floss_ = nullptr;
   float *vmmu_ = nullptr;
   float *vsig_ = nullptr;
