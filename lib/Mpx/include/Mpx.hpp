@@ -42,6 +42,7 @@ public:
   bool new_data(const float *data, uint16_t size);
   uint16_t compute(const float *data, uint16_t size);
   void floss_iac();
+  void prune_buffer();
   void floss();
   void movmean();
   void movsig();

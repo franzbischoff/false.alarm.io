@@ -13,8 +13,7 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
       vmatrix_profile_((float *)calloc(profile_len_ + 1U, sizeof(float))),
       vprofile_index_((int16_t *)calloc(profile_len_ + 1U, sizeof(int16_t))),
       floss_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      iac_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vmmu_((float *)calloc(profile_len_ + 1U, sizeof(float))),
+      iac_((float *)calloc(profile_len_ + 1U, sizeof(float))), vmmu_((float *)calloc(profile_len_ + 1U, sizeof(float))),
       vsig_((float *)calloc(profile_len_ + 1U, sizeof(float))),
       vddf_((float *)calloc(profile_len_ + 1U, sizeof(float))),
       vddg_((float *)calloc(profile_len_ + 1U, sizeof(float))),
@@ -24,8 +23,8 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
 
   if (vmatrix_profile_ != nullptr && vprofile_index_ != nullptr) {
     for (uint16_t i = 0U; i < profile_len_; i++) {
-      vmatrix_profile_[i] = -1000.0F;
-      vprofile_index_[i] = i;
+      vmatrix_profile_[i] = -1000000.0F;
+      vprofile_index_[i] = -1;
     }
   }
 }
@@ -95,7 +94,7 @@ void Mpx::movsig() {
   if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
     this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
   } else {
-    printf("DEBUG\n");
+    printf("DEBUG: vsig precision\n");
     this->vsig_[buffer_start_] = -1.0F;
   }
 
@@ -115,7 +114,7 @@ void Mpx::movsig() {
     if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
       this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
     } else {
-      printf("DEBUG\n");
+      printf("DEBUG: vsig precision\n");
       this->vsig_[i - this->window_size_ + 1U] = -1.0F;
     }
   }
@@ -149,7 +148,18 @@ void Mpx::muinvn(uint16_t size) {
     accum2 = accum2 - m * m + n * n;
     accum = accum - m + n;
     vmmu_[i] = (float)(accum / (float)window_size_);
-    vsig_[i] = 1.0F / sqrtf(accum2 - vmmu_[i] * vmmu_[i] * (float)window_size_);
+    float const psig = accum2 - vmmu_[i] * vmmu_[i] * (float)window_size_;
+    if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
+      vsig_[i] = 1.0F / sqrtf(psig);
+    } else {
+      // printf("DEBUG: vsig precision, %.12f, %.12f\n", accum2, vmmu_[i]);
+      // accum2 = accum2 + m * m - n * n;
+      // accum = accum + m - n;
+      // vmmu_[i] = (float)(accum / (float)window_size_);
+      // float const psig2 = accum2 - vmmu_[i] * vmmu_[i] * (float)window_size_;
+      // printf("DEBUG: vsig precision, %.12f, %.12f, %.12f\n", accum2, vmmu_[i], psig2);
+      vsig_[i] = 0;
+    }
   }
 
   this->last_movsum_ = accum;
@@ -210,14 +220,14 @@ void Mpx::mp_next(uint16_t size) {
     vprofile_index_[i] = (int16_t)vprofile_index_[i + size] - size; // the index must be reduced
 
     // avoid too negative values
-    if(vprofile_index_[i] < -1) {
-      vprofile_index_[i] = i;
+    if (vprofile_index_[i] < -1) {
+      vprofile_index_[i] = -1;
     }
   }
 
   for (uint16_t i = j; i < profile_len_; i++) {
-    vmatrix_profile_[i] = -1000.0F;
-    vprofile_index_[i] = i;
+    vmatrix_profile_[i] = -1000000.0F;
+    vprofile_index_[i] = -1;
   }
 }
 
@@ -275,6 +285,24 @@ void Mpx::ww_s() {
   }
 }
 
+void Mpx::prune_buffer() {
+  // prune buffer
+  srand(time(NULL));
+
+  data_buffer_[0] = 0.001F;
+
+  for (uint16_t i = 1U; i < buffer_size_; i++) {
+    float mock = (float)((rand() % 1000) - 500);
+    mock /= 1000.0F;
+    data_buffer_[i] = data_buffer_[i - 1] + mock;
+  }
+  buffer_used_ = buffer_size_;
+  buffer_start_ = 0;
+  muinvn(0U);
+  ddf(0U);
+  ddg(0U);
+}
+
 void Mpx::floss_iac() {
 
   uint16_t *mpi = nullptr;
@@ -287,7 +315,7 @@ void Mpx::floss_iac() {
     this->iac_[i] = 0.0F;
   }
 
-  for(uint16_t j = 0U; j < 10; j++) { // repeat 10 times to smooth the result
+  for (uint16_t j = 0U; j < 10; j++) { // repeat 10 times to smooth the result
     for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
       mpi[i] = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
     }
@@ -309,10 +337,9 @@ void Mpx::floss_iac() {
     this->iac_[i + 1U] += this->iac_[i];
   }
 
-  free(mpi);
+  free(mpi); // test for edit session
 }
 
-// IAC can be hard coded later
 // cppcheck-suppress unusedFunction
 void Mpx::floss() {
 
@@ -320,25 +347,29 @@ void Mpx::floss() {
     this->floss_[i] = 0.0F;
   }
 
+  srand(time(NULL));
+
   for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
-    int16_t const j = vprofile_index_[i];
+    int16_t j = vprofile_index_[i];
 
     if (j >= this->profile_len_) {
-      printf("j >= this->profile_len_\n");
+      printf("DEBUG: j >= this->profile_len_\n");
       continue;
     }
 
     if (j < 0) {
-      if(j < -1) {
-        printf("j < 0\n");
+      if (j < -1) {
+        printf("DEBUG: j < -1\n");
       }
-      continue;
+      printf("DEBUG: j < 0\n");
+      j = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
+      vprofile_index_[i] = j;
+      // continue;
     }
 
     if (j < i) {
-      printf("i = %d ; j = %d \n", i, j);
+      printf("DEBUG: i = %d ; j = %d \n", i, j);
     }
-
     // RMP, i is always < j
     this->floss_[i] += 1.0F;
     this->floss_[j] -= 1.0F;
@@ -347,10 +378,10 @@ void Mpx::floss() {
   // const float a = 1.939274;
   // const float b = 1.69815;
   // const float c = 4.035477;
-////  const float len = (float)this->profile_len_;
-////  const float x = 1.0F / len;
-////  const float llen = len * 1.1494F;
-////  float iac = 0.001F; // cppcheck-suppress unreadVariable
+  ////  const float len = (float)this->profile_len_;
+  ////  const float x = 1.0F / len;
+  ////  const float llen = len * 1.1494F;
+  ////  float iac = 0.001F; // cppcheck-suppress unreadVariable
 
   // cumsum
   for (uint16_t i = 0U; i < this->range_; i++) {
@@ -361,10 +392,10 @@ void Mpx::floss() {
       // iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
       // iac = 0.816057 * len * powf(i * x, 0.939274) * powf(1 - powf(i * x, 1.93927), 0.69815);
       // iac = 0.8245 * powf(i * x, 0.94) * powf(1.0 - powf(i * x, 1.94), 0.7) * len;
- //     // const float idx = (float)i * x;
- //     // iac = powf(idx, 1.08F) * powf(1.0F - idx, 0.64F) * llen; // faster
+      //     // const float idx = (float)i * x;
+      //     // iac = powf(idx, 1.08F) * powf(1.0F - idx, 0.64F) * llen; // faster
       // iac = a * b * powf(idx, (a - 1)) * powf(1 - powf(idx, a), (b - 1)) * len / 4.035477;
-      if(this->floss_[i] > this->iac_[i]) {
+      if (this->floss_[i] > this->iac_[i]) {
         this->floss_[i] = 1.0F;
       } else {
         this->floss_[i] /= this->iac_[i];
@@ -415,6 +446,10 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
     for (uint16_t j = 0U; j < window_size_; j++) {
       c += (data_buffer_[i + j] - vmmu_[i]) * vww_[j];
     }
+    // DEBUG:
+    // if (c > 10.0F) {
+    //   printf("DEBUG: c: %.3F, Data: %.3F, mmu: %.3F, vww: %.3F\n", c, data_buffer_[i], vmmu_[i], vww_[0]);
+    // }
 
     uint16_t off_min = 0U;
 
@@ -432,8 +467,14 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
 
       c += vddf_[offset] * vddg_[off_diag] + vddf_[off_diag] * vddg_[offset];
 
+      // DEBUG:
+      // if ((c * vsig_[offset] * vsig_[off_diag]) > 10.0F) {
+      //   printf("DEBUG2: c: %.3F, vddf_[offset] %.3F, vddg_[off_diag] %.3F, vddf_[off_diag] %.3F, vddg_[offset] %.3F\n", c, vddf_[offset], vddg_[off_diag], vddf_[off_diag], vddg_[offset]);
+      // }
+
       if ((vsig_[offset] < 0.0F) || (vsig_[off_diag] < 0.0F)) { // wild sig, misleading
-        // printf(">WS\n");
+        // if(this->buffer_start_ == 0)
+        printf("DEBUG: %d WS\n", offset);
         continue;
       }
 
@@ -444,7 +485,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       if (c_cmp > vmatrix_profile_[off_diag]) {
         // printf("%f\n", c_cmp);
         vmatrix_profile_[off_diag] = c_cmp;
-        vprofile_index_[off_diag] = (int16_t)(offset);// + 1U);
+        vprofile_index_[off_diag] = (int16_t)(offset); // + 1U);
       }
     }
   }
