@@ -158,7 +158,7 @@ void Mpx::muinvn(uint16_t size) {
       // vmmu_[i] = (float)(accum / (float)window_size_);
       // float const psig2 = accum2 - vmmu_[i] * vmmu_[i] * (float)window_size_;
       // printf("DEBUG: vsig precision, %.12f, %.12f, %.12f\n", accum2, vmmu_[i], psig2);
-      vsig_[i] = 0;
+      vsig_[i] = -1.0F;
     }
   }
 
@@ -347,7 +347,7 @@ void Mpx::floss() {
     this->floss_[i] = 0.0F;
   }
 
-  srand(time(NULL));
+  // srand(time(NULL));
 
   for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
     int16_t j = vprofile_index_[i];
@@ -361,10 +361,10 @@ void Mpx::floss() {
       if (j < -1) {
         printf("DEBUG: j < -1\n");
       }
-      printf("DEBUG: j < 0\n");
-      j = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
-      vprofile_index_[i] = j;
-      // continue;
+      // printf("DEBUG: j < 0\n");
+      // j = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
+      // vprofile_index_[i] = j;
+      continue;
     }
 
     if (j < i) {
@@ -500,6 +500,7 @@ Mpx::~Mpx() {
   free(this->vddf_);
   free(this->vsig_);
   free(this->vmmu_);
+  free(this->iac_);
   free(this->vprofile_index_);
   free(this->vmatrix_profile_);
   free(this->data_buffer_);
