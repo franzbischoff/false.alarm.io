@@ -13,8 +13,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <ctime>
-#include <cstring>
 #include <memory>
 #endif
 
@@ -57,7 +55,17 @@ public:
   float *get_matrix() { return vmatrix_profile_; };
   int16_t *get_indexes() { return vprofile_index_; };
   float *get_floss() { return floss_; };
+  float *get_iac() { return iac_; };
+  float *get_vmmu() { return vmmu_; };
+  float *get_vsig() { return vsig_; };
+  float *get_ddf() { return vddf_; };
+  float *get_ddg() { return vddg_; };
+  float *get_vww() { return vww_; };
   uint16_t get_buffer_used() { return buffer_used_; };
+  int16_t get_buffer_start() { return buffer_start_; };
+  uint16_t get_profile_len() { return profile_len_; };
+  float get_last_movsum() { return last_accum_+last_resid_; };
+  float get_last_mov2sum() { return last_accum2_+last_resid2_; };
 
 private:
   const uint16_t window_size_;
@@ -72,15 +80,17 @@ private:
 
   uint16_t exclusion_zone_;
 
-  float last_movsum_ = 0.0F;
-  float last_mov2sum_ = 0.0F;
+  float last_accum_ = 0.0F;
+  float last_resid_ = 0.0F;
+  float last_accum2_ = 0.0F;
+  float last_resid2_ = 0.0F;
 
   // arrays
   float *data_buffer_ = nullptr;
   float *vmatrix_profile_ = nullptr;
   int16_t *vprofile_index_ = nullptr;
-  float *iac_ = nullptr;
   float *floss_ = nullptr;
+  float *iac_ = nullptr;
   float *vmmu_ = nullptr;
   float *vsig_ = nullptr;
   float *vddf_ = nullptr;

@@ -55,15 +55,18 @@ void Mpx::movmean() {
     float const n = this->data_buffer_[i];
     float const p = accum - m;
     float const q = p - accum;
-    float const r = resid + ((accum - (p - q)) - (m + q));
+    resid = resid + ((accum - (p - q)) - (m + q));
+
     accum = p + n;
     float const t = accum - p;
-    resid = r + ((p - (accum - t)) + (n - t));
+    resid = resid + ((p - (accum - t)) + (n - t));
+
     movsum = accum + resid;
     this->vmmu_[i - this->window_size_ + 1U] = (float)(movsum / (float)this->window_size_);
   }
 
-  this->last_movsum_ = movsum;
+  this->last_accum_ = accum;
+  this->last_resid_ = resid;
 }
 
 void Mpx::movsig() {
@@ -94,7 +97,7 @@ void Mpx::movsig() {
   if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
     this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
   } else {
-    printf("DEBUG: vsig precision\n");
+    // printf("DEBUG: vsig precision\n");
     this->vsig_[buffer_start_] = -1.0F;
   }
 
@@ -103,10 +106,10 @@ void Mpx::movsig() {
     float const n = this->data_buffer_[i] * this->data_buffer_[i];
     float const p = accum - m;
     float const q = p - accum;
-    float const r = resid + ((accum - (p - q)) - (m + q));
+    resid = resid + ((accum - (p - q)) - (m + q));
     accum = p + n;
     float const t = accum - p;
-    resid = r + ((p - (accum - t)) + (n - t));
+    resid = resid + ((p - (accum - t)) + (n - t));
     mov2sum = accum + resid;
     float const ppsig = mov2sum - this->vmmu_[i - this->window_size_ + 1U] * this->vmmu_[i - this->window_size_ + 1U] *
                                       (float)this->window_size_;
@@ -114,12 +117,13 @@ void Mpx::movsig() {
     if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
       this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
     } else {
-      printf("DEBUG: vsig precision\n");
+      // printf("DEBUG: vsig precision\n");
       this->vsig_[i - this->window_size_ + 1U] = -1.0F;
     }
   }
 
-  this->last_mov2sum_ = mov2sum;
+  this->last_accum2_ = accum;
+  this->last_resid2_ = resid;
 }
 
 void Mpx::muinvn(uint16_t size) {
@@ -139,16 +143,36 @@ void Mpx::muinvn(uint16_t size) {
   }
 
   // compute new mmu sig
-  float accum = this->last_movsum_;
-  float accum2 = this->last_mov2sum_;
+  float accum = this->last_accum_;
+  float accum2 = this->last_accum2_;
+  float resid = this->last_resid_;
+  float resid2 = this->last_resid2_;
 
   for (uint16_t i = j; i < profile_len_; i++) {
-    float const m = data_buffer_[i - 1];
-    float const n = data_buffer_[i - 1 + window_size_];
-    accum2 = accum2 - m * m + n * n;
-    accum = accum - m + n;
-    vmmu_[i] = (float)(accum / (float)window_size_);
-    float const psig = accum2 - vmmu_[i] * vmmu_[i] * (float)window_size_;
+    /* mean */
+    float m = data_buffer_[i - 1];
+    float n = data_buffer_[i - 1 + window_size_];
+    float p = accum - m;
+    float q = p - accum;
+    resid = resid + ((accum - (p - q)) - (m + q));
+
+    accum = p + n;
+    float t = accum - p;
+    resid = resid + ((p - (accum - t)) + (n - t));
+    vmmu_[i] = (float)((accum + resid) / (float)window_size_);
+
+    /* sig */
+    m = data_buffer_[i - 1] * data_buffer_[i - 1];
+    n = data_buffer_[i - 1 + window_size_] * data_buffer_[i - 1 + window_size_];
+    p = accum2 - m;
+    q = p - accum2;
+    resid2 = resid2 + ((accum2 - (p - q)) - (m + q));
+
+    accum2 = p + n;
+    t = accum2 - p;
+    resid2 = resid2 + ((p - (accum2 - t)) + (n - t));
+
+    float const psig = (accum2 + resid2) - vmmu_[i] * vmmu_[i] * (float)window_size_;
     if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
       vsig_[i] = 1.0F / sqrtf(psig);
     } else {
@@ -162,8 +186,10 @@ void Mpx::muinvn(uint16_t size) {
     }
   }
 
-  this->last_movsum_ = accum;
-  this->last_mov2sum_ = accum2;
+  this->last_accum_ = accum;
+  this->last_accum2_ = accum2;
+  this->last_resid_ = resid;
+  this->last_resid2_ = resid2;
 }
 
 bool Mpx::new_data(const float *data, uint16_t size) {
@@ -464,17 +490,19 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
     for (uint16_t offset = off_start; offset > off_min; offset--) {
       // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
       uint16_t const off_diag = offset - (range_ - i);
+      // 3586 = i, offset = 4900
 
       c += vddf_[offset] * vddg_[off_diag] + vddf_[off_diag] * vddg_[offset];
 
       // DEBUG:
       // if ((c * vsig_[offset] * vsig_[off_diag]) > 10.0F) {
-      //   printf("DEBUG2: c: %.3F, vddf_[offset] %.3F, vddg_[off_diag] %.3F, vddf_[off_diag] %.3F, vddg_[offset] %.3F\n", c, vddf_[offset], vddg_[off_diag], vddf_[off_diag], vddg_[offset]);
+      //   printf("DEBUG2: c: %.3F, vddf_[offset] %.3F, vddg_[off_diag] %.3F, vddf_[off_diag] %.3F, vddg_[offset]
+      //   %.3F\n", c, vddf_[offset], vddg_[off_diag], vddf_[off_diag], vddg_[offset]);
       // }
 
       if ((vsig_[offset] < 0.0F) || (vsig_[off_diag] < 0.0F)) { // wild sig, misleading
         // if(this->buffer_start_ == 0)
-        printf("DEBUG: %d WS\n", offset);
+        // printf("DEBUG: %d WS\n", offset);
         continue;
       }
 
