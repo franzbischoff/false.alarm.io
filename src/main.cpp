@@ -1,23 +1,23 @@
-#define TIMER_INTERRUPT_DEBUG 0
-#define _TIMERINTERRUPT_LOGLEVEL_ 0
+// This is a personal academic project. Dear PVS-Studio, please check it.
 
-#define USE_TIMER_1 true
+// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 
 #include <Mpx.hpp>
 
 #ifndef NATIVE_PLATFORM
-#include <TimerInterrupt_Generic.h>
 #include <freertos/queue.h>
 #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
-#include "FS.h"
+#if defined(FILE_DATA)
+#include <FS.h>
 #include <LittleFS.h>
+
+#define FORMAT_LITTLEFS_IF_FAILED false
+#endif
 #else
 #include <fstream>
 #include <iostream>
 #include <string>
 #endif
-
-#define FORMAT_LITTLEFS_IF_FAILED false
 
 //>> Matrix Profile settings are defined on compile time
 #define WIN_SIZE WINDOW_SIZE
@@ -45,84 +45,35 @@ void mon_task(void *pv_parameters);
 void idle_task(void *pv_parameters);
 
 enum { CORE_0 = 0, CORE_1 = 1 };
+
 QueueHandle_t queue; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-//>> interrupt variables
-bool int_ready = true; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 #else
-float values[QUEUE_SIZE];
-uint16_t recv_count = 0;
-uint32_t read_line = 0;
-MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE);
+float values[QUEUE_SIZE]; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+uint16_t recv_count = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+uint32_t read_line = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 #endif
 bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 #ifndef NATIVE_PLATFORM
-void read_file(fs::FS &fs, const char *path) {
-  Serial.printf("Reading file: %s\r\n", path);
-
-  File file = fs.open(path);
-  if (!file || file.isDirectory()) {
-    Serial.println("- failed to open file for reading");
-    return;
-  }
-
-  Serial.println("- read from file:");
-  while (file.available()) {
-    Serial.println(file.parseFloat());
-  }
-  file.close();
-}
-
-void list_dir(fs::FS &fs, const char *dirname, uint8_t levels) {
-  Serial.printf("Listing directory: %s\r\n", dirname);
-
-  File root = fs.open(dirname);
-  if (!root) {
-    Serial.println("- failed to open directory");
-    return;
-  }
-  if (!root.isDirectory()) {
-    Serial.println(" - not a directory");
-    return;
-  }
-
-  File file = root.openNextFile();
-  while (file) {
-    if (file.isDirectory()) {
-      Serial.print("  DIR : ");
-      Serial.println(file.name());
-      if (levels) {
-        list_dir(fs, file.path(), levels - 1);
-      }
-    } else {
-      Serial.print("  FILE: ");
-      Serial.print(file.name());
-      Serial.print("\tSIZE: ");
-      Serial.println(file.size());
-    }
-    file = root.openNextFile();
-  }
-}
-
-bool IRAM_ATTR control_irq(void *t) {
-  (void)t;
-  int_ready = true;
-  return true;
-}
 
 //>> Usual setup function
 // the setup function runs once when you press reset or power the board
+// cppcheck-suppress unusedFunction
 void setup() {
 
   uint16_t queue_size = QUEUE_SIZE;
   // initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
   Serial.setDebugOutput(true);
+
+#if defined(FILE_DATA)
   if (!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)) {
     printf("LittleFS Mount Failed");
     return;
   }
+#endif
 
   queue = xQueueCreate(queue_size, sizeof(float));
 
@@ -169,6 +120,7 @@ void setup() {
 }
 
 //>> Usual loop function
+// cppcheck-suppress unusedFunction
 void loop() {
   // Empty. Things are done in Tasks.
 }
@@ -184,27 +136,27 @@ uint32_t idle_cnt = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variab
 
 void idle_task(void *pv_parameters) {
   (void)pv_parameters;
-  for (;;) {
+  for (;;) // -H776 A Task shall never return or exit.
+  {
     vTaskDelay(portTICK_RATE_MS * 0);
     // printf("%u\n", uxTaskGetStackHighWaterMark(NULL)); // 17316
-
     idle_cnt++;
   }
 }
 
 void mon_task(void *pv_parameters) {
   (void)pv_parameters;
+  TickType_t last_wake_time;
 
-  for (;;) {
-
+  for (;;) // -V776 A Task shall never return or exit.
+  {
+    vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * 3000));
     uint32_t new_cnt = idle_cnt; // Save the count for printing it ...
-    printf("CPU frequency: %u MHz\n", ESP.getCpuFreqMHz());
-    printf("Available memory: %u/327680 bytes\n", ESP.getFreeHeap());
+    // printf("CPU frequency: %u MHz\n", ESP.getCpuFreqMHz());
+    // printf("Available memory: %u/327680 bytes\n", ESP.getFreeHeap());
     printf("CPU usage: %.3f\n", (float)(3000 - new_cnt) / 30.0F);
     idle_cnt = 0;
     // printf("%u\n", uxTaskGetStackHighWaterMark(NULL)); // 17316
-
-    vTaskDelay((portTICK_PERIOD_MS * 3000)); // 1073475208% 1073475208%
   }
 }
 
@@ -219,21 +171,20 @@ void task_compute(void *pv_parameters) // This is a task.
 #ifndef NATIVE_PLATFORM
   const uint16_t win_size = WIN_SIZE;
   const uint16_t hist_size = HIST_SIZE;
-  uint16_t recv_count = 0;
+  uint16_t recv_count;
   int16_t delay_adjust = 100;
   float data = 0.0F;
 #endif
 
-  for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
+  for (uint16_t i = 0; i < BUFFER_SIZE; i++) { // NOLINT(modernize-loop-convert)
     buffer[i] = 0.0F;
   }
 
 #ifndef NATIVE_PLATFORM
   MatrixProfile::Mpx mpx(win_size, 0.5F, 0, hist_size);
-  mpx.floss_iac();
   mpx.prune_buffer();
 
-  for (;;) // A Task shall never return or exit.
+  for (;;) // -H776 A Task shall never return or exit.
   {
 #endif
     if (buffer_init) { // wait for buffer to be initialized
@@ -299,9 +250,10 @@ void task_compute(void *pv_parameters) // This is a task.
         //   } else {
         //     for (uint16_t i = 0; i < profile_len; i++) {
         //       const std::string line =
-        //           std::to_string(read_line) + "," + std::to_string(floss[i]) + "," + std::to_string(matrix[i]) + "," +
-        //           std::to_string(indexes[i]) + "," + std::to_string(vmmu[i]) + "," + std::to_string(vsig[i]) + "," +
-        //           std::to_string(ddf[i]) + "," + std::to_string(ddg[i]) + "," + std::to_string(last_mov2sum) + "\n";
+        //           std::to_string(read_line) + "," + std::to_string(floss[i]) + "," + std::to_string(matrix[i]) + ","
+        //           + std::to_string(indexes[i]) + "," + std::to_string(vmmu[i]) + "," + std::to_string(vsig[i]) + ","
+        //           + std::to_string(ddf[i]) + "," + std::to_string(ddg[i]) + "," + std::to_string(last_mov2sum) +
+        //           "\n";
         //       file_out.write(line.c_str(), line.length());
         //     }
         //     file_out.close();
@@ -309,7 +261,8 @@ void task_compute(void *pv_parameters) // This is a task.
         // }
 
         for (uint16_t i = 0; i < recv_count; i++) {
-          printf("%.3f, %.3f\n", buffer[i], floss[floss_landmark + i]); //indexes[floss_landmark + i]);
+          printf("%.1f, %.2f, %.2f\n", buffer[i], floss[floss_landmark + i],
+                 matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
         }
         // printf("[Consumer] %d\n", recv_count); // handle about 400 samples per second
 #ifndef NATIVE_PLATFORM
@@ -318,8 +271,10 @@ void task_compute(void *pv_parameters) // This is a task.
           if (delay_adjust <= 0) {
             delay_adjust = 1;
           }
-        } else if (recv_count < 20) {
-          delay_adjust +=5;
+        } else {
+          if (recv_count < 20) {
+            delay_adjust += 5;
+          }
         }
 #endif
       }
@@ -341,12 +296,10 @@ void task_read_signal(void *pv_parameters) // This is a task.
 {
   (void)pv_parameters;
 
-  // ESP32Timer timer1(0);
-  TickType_t xLastWakeTime;
+  TickType_t last_wake_time;
 
   uint16_t initial_counter = 0;
-  float ir_res = 0.0F;
-  // const uint32_t timer_interval = 1000000U / SAMPLING_HZ; // 4ms = 250Hz
+  float ir_res;
   const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
 
 #ifndef FILE_DATA
@@ -373,7 +326,7 @@ void task_read_signal(void *pv_parameters) // This is a task.
   SparkFun_Bio_Sensor_Hub bio_hub(res_pin, mfio_pin);
   bioData body;
 
-  uint32_t ir_led = 0;
+  uint32_t ir_led;
   bool sensor_started = false;
 
   float ir_sum = 0.0F;
@@ -388,95 +341,91 @@ void task_read_signal(void *pv_parameters) // This is a task.
   bio_hub.setPulseWidth(width);   // 18 bits resolution (0-262143)
   bio_hub.setSampleRate(samples); // 18 bits resolution (0-262143)
 #else
-  File file = LittleFS.open("/floss.csv");
+  File file = LittleFS.open("/floss.csv"); // NOLINT(misc-const-correctness) - this variable can't be const
   if (!file || file.isDirectory()) {
     printf("XXX failed to open file for reading\n.");
     return;
   }
 #endif
 
-  // timer1.attachInterruptInterval(timer_interval, control_irq);
   vTaskDelay((portTICK_PERIOD_MS * 1000)); // Wait for sensor to stabilize
 
-  xLastWakeTime = xTaskGetTickCount();
+  last_wake_time = xTaskGetTickCount();
 
-  for (;;) {
-    vTaskDelayUntil(&xLastWakeTime, (portTICK_PERIOD_MS * timer_interval)); // for stability
-    if (int_ready) {
+  for (;;) // -H776 A Task shall never return or exit.
+  {
+    vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
+
 #ifndef FILE_DATA
-      body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
-      ir_led = body.irLed;
+    body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
+    ir_led = body.irLed;
 
-      if (!sensor_started) {
-        if (ir_led > 1) {
-          sensor_started = true;
-          initial_counter = 0;
-          /* Print chip information */
-          esp_chip_info_t chip_info;
-          esp_chip_info(&chip_info);
-          printf("[Producer] ESP32, %d CPU cores, WiFi%s%s, ", chip_info.cores,
-                 (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-                 (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+    if (!sensor_started) {
+      if (ir_led > 1) {
+        sensor_started = true;
+        initial_counter = 0;
+        /* Print chip information */
+        esp_chip_info_t chip_info;
+        esp_chip_info(&chip_info);
+        printf("[Producer] ESP32, %d CPU cores, WiFi%s%s, ", chip_info.cores,
+               (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+               (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
 
-          printf("silicon revision %d, ", chip_info.revision);
+        printf("silicon revision %d, ", chip_info.revision);
 
-          printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
-                 (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-          printf("[Producer] Sensor started, now it can be used.\n");
-        } else {
-          initial_counter++;
-          if (initial_counter > 2500) {
-            printf("[Producer] Sensor not properly started, rebooting...\n");
-            ESP.restart();
-          }
+        printf("%uMB %s flash\n", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
+               (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+        printf("[Producer] Sensor started, now it can be used.\n");
+      } else {
+        initial_counter++;
+        if (initial_counter > 2500) {
+          printf("[Producer] Sensor not properly started, rebooting...\n");
+          ESP.restart();
         }
       }
+    }
 
-      // 70744 // t 318384 > 363368 // 277,849/1,310,720 ;; 16,976/327,680
-      // getMaxAllocHeap: 69620
+    // 70744 // t 318384 > 363368 // 277,849/1,310,720 ;; 16,976/327,680
+    // getMaxAllocHeap: 69620
 
-      if (ir_led > 10000) {
-        // printf("Read %u\n", uxTaskGetStackHighWaterMark(NULL)); // 176
+    if (ir_led > 10000) {
+      // printf("Read %u\n", uxTaskGetStackHighWaterMark(NULL)); // 176
 
-        ir_sum = ir_sum * alpha + ir_led;
-        ir_num = ir_num * alpha + 1.0F;
-        ir_sum2 = ir_sum2 * l_alpha + ir_led;
-        ir_num2 = ir_num2 * l_alpha + 1.0F;
-        ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
-        ir_res /= 20.0F;
+      ir_sum = ir_sum * alpha + (float)ir_led;
+      ir_num = ir_num * alpha + 1.0F;
+      ir_sum2 = ir_sum2 * l_alpha + (float)ir_led;
+      ir_num2 = ir_num2 * l_alpha + 1.0F;
+      ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
+      ir_res /= 20.0F;
 #else
-      if (file.available()) {
-        ir_res = file.parseFloat();
-      } else {
-        file.close();
-      }
+    if (file.available()) {
+      ir_res = file.parseFloat();
+    } else {
+      ir_res = 0.0F;
+      file.close();
+    }
 #endif
 
-      if(ir_res > 50.0F || ir_res < -50.0F) {
-        // printf("%.3f\n", ir_res);
+      if (ir_res > 50.0F || ir_res < -50.0F) {
         continue;
       }
 
-
-        if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
-          if (!buffer_init) {
-            if (++initial_counter >= BUFFER_SIZE) {
-              buffer_init = true; // this is read by the receiver task
-              printf("[Producer] DEBUG: Buffer filled, starting to compute\n");
-            }
+      if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
+        if (!buffer_init) {
+          if (++initial_counter >= BUFFER_SIZE) {
+            buffer_init = true; // this is read by the receiver task
+            printf("[Producer] DEBUG: Buffer filled, starting to compute\n");
           }
-        } else {
-          printf("[Producer] Error sending data to the queue\n");
         }
-#ifndef FILE_DATA
       } else {
-        // printf("[Producer] IR: %d\n", body.irLed);
-        vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+        printf("[Producer] Error sending data to the queue\n");
       }
-#endif
-      // int_ready = false;
+#ifndef FILE_DATA
+    } else {
+      // printf("[Producer] IR: %d\n", body.irLed);
+      vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
     }
-    // vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+#endif
   }
 }
 #endif
@@ -491,17 +440,16 @@ int main() {
     return 1;
   }
 
-  mpx.floss_iac();
-  mpx.prune_buffer();
-
   uint16_t k = 0;
   for (std::string line; std::getline(file, line);) // read stream line by line
   {
     read_line++;
-    float v = std::stof(line);
-    // if(v > 25.0F || v < -25.0F) {
-    //   continue;
-    // }
+    float const v = std::stof(line);
+
+    if(v > 50.0F || v < -50.0F) {
+      continue;
+    }
+
     values[k++] = v;
 
     if (!buffer_init) {

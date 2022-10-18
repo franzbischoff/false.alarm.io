@@ -39,7 +39,6 @@ public:
   // void Compute();
   bool new_data(const float *data, uint16_t size);
   uint16_t compute(const float *data, uint16_t size);
-  void floss_iac();
   void prune_buffer();
   void floss();
   void movmean();
@@ -61,13 +60,15 @@ public:
   float *get_ddf() { return vddf_; };
   float *get_ddg() { return vddg_; };
   float *get_vww() { return vww_; };
-  uint16_t get_buffer_used() { return buffer_used_; };
-  int16_t get_buffer_start() { return buffer_start_; };
-  uint16_t get_profile_len() { return profile_len_; };
-  float get_last_movsum() { return last_accum_+last_resid_; };
-  float get_last_mov2sum() { return last_accum2_+last_resid2_; };
+  const uint16_t get_buffer_used() { return buffer_used_; };
+  const int16_t get_buffer_start() { return buffer_start_; };
+  const uint16_t get_profile_len() { return profile_len_; };
+  const float get_last_movsum() { return last_accum_+last_resid_; };
+  const float get_last_mov2sum() { return last_accum2_+last_resid2_; };
 
 private:
+  void floss_iac_();
+
   const uint16_t window_size_;
   const float ez_;
   const uint16_t time_constraint_;
