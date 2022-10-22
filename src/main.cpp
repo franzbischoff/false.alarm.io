@@ -261,7 +261,7 @@ void task_compute(void *pv_parameters) // This is a task.
         // }
 
         for (uint16_t i = 0; i < recv_count; i++) {
-          printf("%.1f, %.2f, %.2f\n", buffer[i], floss[floss_landmark + i],
+          printf("%.1f %.2f %.2f\n", buffer[i], floss[floss_landmark + i],
                  matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
         }
         // printf("[Consumer] %d\n", recv_count); // handle about 400 samples per second
@@ -367,14 +367,24 @@ void task_read_signal(void *pv_parameters) // This is a task.
         /* Print chip information */
         esp_chip_info_t chip_info;
         esp_chip_info(&chip_info);
-        printf("[Producer] ESP32, %d CPU cores, WiFi%s%s, ", chip_info.cores,
+        printf("[Producer] ESP32%s rev %d, %d CPU cores, WiFi%s%s%s, ",
+               (chip_info.model & CHIP_ESP32S2) ? "-S2" : "",
+               chip_info.revision,
+                chip_info.cores,
                (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-               (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+               (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
+               (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
 
-        printf("silicon revision %d, ", chip_info.revision);
-
-        printf("%uMB %s flash\n", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
+        printf("%uMB %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
                (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+
+        if(psramFound()) {
+          printf(", %uMB %s PSRAM\n", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
+               (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
+        } else {
+          printf(", No PSRAM found\n");
+        }
+
         printf("[Producer] Sensor started, now it can be used.\n");
       } else {
         initial_counter++;
