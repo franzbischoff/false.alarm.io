@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <memory>
 #include <cmath>
-#elif defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO)
+#elif !defined(ESP_PLATFORM) && (defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO))
 #include <Arduino.h>
 // #include <CircularBuffer.h>
 #else

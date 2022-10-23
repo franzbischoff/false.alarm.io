@@ -146,9 +146,9 @@ void Mpx::muinvn(uint16_t size) {
   }
 
   // compute new mmu sig
-  float accum = this->last_accum_; // NOLINT(misc-const-correctness) - this variable can't be const
+  float accum = this->last_accum_;   // NOLINT(misc-const-correctness) - this variable can't be const
   float accum2 = this->last_accum2_; // NOLINT(misc-const-correctness) - this variable can't be const
-  float resid = this->last_resid_; // NOLINT(misc-const-correctness) - this variable can't be const
+  float resid = this->last_resid_;   // NOLINT(misc-const-correctness) - this variable can't be const
   float resid2 = this->last_resid2_; // NOLINT(misc-const-correctness) - this variable can't be const
 
   for (uint16_t i = j; i < profile_len_; i++) {
@@ -333,7 +333,7 @@ void Mpx::floss_iac_() {
 
   mpi = ((uint16_t *)calloc(this->profile_len_ + 1U, sizeof(uint16_t)));
 
-  if(mpi == nullptr) {
+  if (mpi == nullptr) {
     printf("Memory allocation failed\n");
     return;
   }

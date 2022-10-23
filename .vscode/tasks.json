@@ -11,7 +11,7 @@
 				"$platformio"
 			],
 			"dependsOn": [
-				"Remote Upload (esp32)"
+				"Remote Upload (esp32idf)"
 			],
 			"detail": "Franz test",
 			"presentation": {
@@ -27,7 +27,7 @@
 		},
 		{
 			"type": "PlatformIO",
-			"task": "Remote Upload (esp32)",
+			"task": "Remote Upload (esp32idf)",
 			"runOptions": {
 				"instanceLimit": 1
 			},
@@ -44,7 +44,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "PlatformIO: Remote Upload (esp32)"
+			"label": "PlatformIO: Remote Upload (esp32idf)"
 		}
 	]
 }
