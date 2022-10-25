@@ -3,11 +3,14 @@
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 
 #include <esp_log.h>
-// #include <esp_system.h>
+#include <esp_system.h>
+#include <esp_littlefs.h>
 // #include "sdkconfig.h"
 // #include <nvs_flash.h>
 // #include <sys/param.h>
 // #include <cstring>
+// #include <fstream>
+// #include <iostream>
 #include <cmath>
 
 #include <freertos/FreeRTOS.h>
@@ -57,13 +60,12 @@ enum { CORE_0 = 0, CORE_1 = 1 };
 // MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
+FILE* file;
 QueueHandle_t queue; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void task_compute(void *pv_parameters) // This is a task.
 {
   (void)pv_parameters;
-
-  ESP_LOGD(TAG, "task_compute started1");
 
   const uint16_t floss_landmark = FLOSS_LANDMARK;
   float buffer[BUFFER_SIZE];
@@ -77,19 +79,12 @@ void task_compute(void *pv_parameters) // This is a task.
     buffer[i] = 0.0F;
   }
 
-  ESP_LOGD(TAG, "task_compute started2");
-
   MatrixProfile::Mpx mpx(win_size, 0.5F, 0, hist_size);
-
-  ESP_LOGD(TAG, "task_compute started3");
   mpx.prune_buffer();
-
-  ESP_LOGD(TAG, "task_compute started4");
 
   for (;;) // -H776 A Task shall never return or exit.
   {
 
-    ESP_LOGD(TAG, "task_compute started");
     if (buffer_init) { // wait for buffer to be initialized
       recv_count = 0;
 
@@ -112,10 +107,10 @@ void task_compute(void *pv_parameters) // This is a task.
         float *floss = mpx.get_floss();
         float *matrix = mpx.get_matrix();
 
-        for (uint16_t i = 0; i < recv_count; i++) {
-          ESP_LOGI(TAG, "%.1f %.2f %.2f\n", buffer[i], floss[floss_landmark + i],
-                   matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
-        }
+        // for (uint16_t i = 0; i < recv_count; i++) {
+        //   ESP_LOGI(TAG, "%.1f %.2f %.2f\n", buffer[i], floss[floss_landmark + i],
+        //            matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
+        // }
         // ESP_LOGD(TAG, "[Consumer] %d\n", recv_count); // handle about 400 samples per second
         if (recv_count > 40) {
           delay_adjust -= 5;
@@ -185,12 +180,6 @@ void task_read_signal(void *pv_parameters) // This is a task.
   // bio_hub.configSensor();
   // bio_hub.setPulseWidth(width);   // 18 bits resolution (0-262143)
   // bio_hub.setSampleRate(samples); // 18 bits resolution (0-262143)
-#else
-  File file = LittleFS.open("/floss.csv"); // NOLINT(misc-const-correctness) - this variable can't be const
-  if (!file || file.isDirectory()) {
-    ESP_LOGD(TAG, "XXX failed to open file for reading\n.");
-    return;
-  }
 #endif
 
   ESP_LOGD(TAG, "task_read_signal started");
@@ -212,24 +201,6 @@ void task_read_signal(void *pv_parameters) // This is a task.
       if (ir_led == 0) {
         sensor_started = true;
         initial_counter = 0;
-        /* Print chip information */
-        esp_chip_info_t chip_info;
-        esp_chip_info(&chip_info);
-        ESP_LOGD(TAG, "[Producer] ESP32%s rev %d, %d CPU cores, WiFi%s%s%s, ",
-                 (chip_info.model & CHIP_ESP32S2) ? "-S2" : "", chip_info.revision, chip_info.cores,
-                 (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-                 (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
-                 (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
-
-        // ESP_LOGD(TAG, "%uMB %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
-        //        (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-
-        // if(psramFound()) {
-        //   ESP_LOGD(TAG, ", %uMB %s PSRAM\n", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
-        //        (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
-        // } else {
-        //   ESP_LOGD(TAG, ", No PSRAM found\n");
-        // }
 
         ESP_LOGD(TAG, "[Producer] Sensor started, now it can be used.\n");
       } else {
@@ -254,12 +225,40 @@ void task_read_signal(void *pv_parameters) // This is a task.
       ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
       ir_res /= 20.0F;
 #else
-    if (file.available()) {
-      ir_res = file.parseFloat();
-    } else {
-      ir_res = 0.0F;
-      file.close();
+
+    ir_res = 0.0F;
+
+
+
+    if (file != nullptr) {
+
+      char line[20];
+
+      line[0] = 'A';
+      line[1] = 'B';
+      line[2] = '\0';
+
+      ESP_LOGI(TAG, "line0: %s", line);
+
+      fgets(line, 20, file);
+
+      ESP_LOGI(TAG, "line: %s", line);
+
+      if (line[0] == '\0') {
+        ESP_LOGI(TAG, "End of file reached");
+        fclose(file);
+        file = nullptr;
+        // All done, unmount partition and disable LittleFS
+        // esp_vfs_littlefs_unregister(conf.partition_label);
+        // ESP_LOGI(TAG, "LittleFS unmounted");
+
+      }
+      // else {
+      //   float v = std::stof(line);
+      //   ir_res = v;
+      // }
     }
+
 #endif
 
       if (ir_res > 50.0F || ir_res < -50.0F) {
@@ -294,6 +293,28 @@ void app_main(void) {
 
   esp_log_level_set(TAG, ESP_LOG_DEBUG);
 
+  ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
+  ESP_LOGD(TAG, "Max alloc Heap: %u", esp_get_minimum_free_heap_size());
+  ESP_LOGD(TAG, "SDK version: %s", esp_get_idf_version());
+
+  /* Print chip information */
+  esp_chip_info_t chip_info;
+  esp_chip_info(&chip_info);
+  ESP_LOGD(TAG, "[Producer] ESP32%s rev %d, %d CPU cores, WiFi%s%s%s, ", (chip_info.model & CHIP_ESP32S2) ? "-S2" : "",
+           chip_info.revision, chip_info.cores, (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+           (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
+           (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
+
+  // ESP_LOGD(TAG, "%uMB %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
+  //        (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+
+  // if(psramFound()) {
+  //   ESP_LOGD(TAG, ", %uMB %s PSRAM\n", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
+  //        (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
+  // } else {
+  //   ESP_LOGD(TAG, ", No PSRAM found\n");
+  // }
+
   queue = xQueueCreate(queue_size, sizeof(float));
 
   if (queue == nullptr) {
@@ -301,24 +322,68 @@ void app_main(void) {
     esp_restart();
   }
 
+  ESP_LOGI(TAG, "Initializing LittleFS");
+
+  esp_vfs_littlefs_conf_t conf = {
+      .base_path = "/littlefs",
+      .partition_label = "littlefs",
+      .format_if_mount_failed = false,
+      .dont_mount = false,
+  };
+
+  // Use settings defined above to initialize and mount LittleFS filesystem.
+  // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
+  esp_err_t ret = esp_vfs_littlefs_register(&conf);
+
+  if (ret != ESP_OK) {
+    if (ret == ESP_FAIL) {
+      ESP_LOGE(TAG, "Failed to mount or format filesystem");
+    } else if (ret == ESP_ERR_NOT_FOUND) {
+      ESP_LOGE(TAG, "Failed to find LittleFS partition");
+    } else {
+      ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+    }
+    return;
+  }
+
+  size_t total = 0, used = 0;
+
+  ret = esp_littlefs_info("littlefs", &total, &used);
+
+  if (esp_littlefs_mounted("littlefs")) {
+    ESP_LOGI(TAG, "LittleFS mounted");
+  } else {
+    ESP_LOGE(TAG, "LittleFS not mounted");
+  }
+
+  ESP_LOGI(TAG, "LittleFS: %u / %u", used, total);
+
+  file = fopen("/littlefs/floss.csv", "r");
+
+  if (file == nullptr) {
+    ESP_LOGE(TAG, "Failed to open file for reading");
+    return;
+  }
+
   ESP_LOGD(TAG, "Creating task 0");
 
-  // xTaskCreatePinnedToCore(task_read_signal, // Task function
-  //                         "ReadSignal",     // Just a name
-  //                         150000,           // Stack size in `word`s
-  //                         nullptr,          // Parameter passed as input of the task (can be NULL)
-  //                         3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the
-  //                         lowest. nullptr, // Task Handle (can be NULL) CORE_0);
-
-  // ESP_LOGD(TAG, "Creating task 1");
-
-  xTaskCreatePinnedToCore(task_compute, // Task function
-                          "Compute",    // Just a name
-                          160000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          nullptr, // Parameter passed as input of the task (can be NULL)
+  xTaskCreatePinnedToCore(task_read_signal, // Task function
+                          "ReadSignal",     // Just a name
+                          40000,            // Stack size in `word`s
+                          nullptr,          // Parameter passed as input of the task (can be NULL)
                           3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
                           nullptr, // Task Handle (can be NULL)
                           CORE_0);
+
+  ESP_LOGD(TAG, "Creating task 1");
+
+  xTaskCreatePinnedToCore(task_compute, // Task function
+                          "Compute",    // Just a name
+                          40000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
+                          nullptr, // Parameter passed as input of the task (can be NULL)
+                          3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+                          nullptr, // Task Handle (can be NULL)
+                          CORE_1);
 
   ESP_LOGD(TAG, "Main is done");
   while (1) {

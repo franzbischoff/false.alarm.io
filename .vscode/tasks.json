@@ -45,6 +45,19 @@
 				"isDefault": true
 			},
 			"label": "PlatformIO: Remote Upload (esp32idf)"
+		},
+		{
+			"type": "shell",
+			"label": "IDF Monitor",
+			"command": "./dev/idf_monitor.sh",
+      "windows": {
+        "command": ".\\dev\\idf_monitor.ps1"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
 		}
 	]
 }
