@@ -9,11 +9,18 @@
 #elif !defined(ESP_PLATFORM) && (defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO))
 #include <Arduino.h>
 // #include <CircularBuffer.h>
+#define RAND() rand()
+#define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
 #else
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <esp_random.h>
+#include <esp_log.h>
+
+#define RAND() (int32_t)(esp_random())
+#define LOG_DEBUG(tag, format, ...) ESP_LOGD(tag, format, ##__VA_ARGS__)
 #endif
 
 #if !defined(NULL)
@@ -63,8 +70,8 @@ public:
   const uint16_t get_buffer_used() { return buffer_used_; };
   const int16_t get_buffer_start() { return buffer_start_; };
   const uint16_t get_profile_len() { return profile_len_; };
-  const float get_last_movsum() { return last_accum_+last_resid_; };
-  const float get_last_mov2sum() { return last_accum2_+last_resid2_; };
+  const float get_last_movsum() { return last_accum_ + last_resid_; };
+  const float get_last_mov2sum() { return last_accum2_ + last_resid2_; };
 
 private:
   void floss_iac_();

@@ -4,6 +4,8 @@
 
 #include "Mpx.hpp"
 
+static char *TAG = "mpx";
+
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
@@ -47,7 +49,7 @@ void Mpx::movmean() {
   }
 
   if (resid > 0.001F) {
-    printf("movsum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    LOG_DEBUG(TAG, "movsum: Residual value is large. Some precision may be lost. res = %.2f", resid);
   }
 
   movsum = accum + resid;
@@ -87,7 +89,7 @@ void Mpx::movsig() {
   }
 
   if (resid > 0.001F) {
-    printf("mov2sum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    LOG_DEBUG(TAG, "mov2sum: Residual value is large. Some precision may be lost. res = %.2f", resid);
   }
 
   mov2sum = accum + resid;
@@ -100,7 +102,7 @@ void Mpx::movsig() {
   if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
     this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
   } else {
-    printf("DEBUG: psig1 precision, %.3f\n", psig);
+    LOG_DEBUG(TAG, "DEBUG: psig1 precision, %.3f", psig);
     this->vsig_[buffer_start_] = -1.0F;
   }
 
@@ -120,7 +122,7 @@ void Mpx::movsig() {
     if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
       this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
     } else {
-      printf("DEBUG: ppsig precision, %.3f\n", ppsig);
+      LOG_DEBUG(TAG, "DEBUG: ppsig precision, %.3f", ppsig);
       this->vsig_[i - this->window_size_ + 1U] = -1.0F;
     }
   }
@@ -179,7 +181,7 @@ void Mpx::muinvn(uint16_t size) {
     if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
       vsig_[i] = 1.0F / sqrtf(psig);
     } else {
-      printf("DEBUG: psig precision, %.3f\n", psig);
+      LOG_DEBUG(TAG, "DEBUG: psig precision, %.3f", psig);
       vsig_[i] = -1.0F;
     }
   }
@@ -195,10 +197,10 @@ bool Mpx::new_data(const float *data, uint16_t size) {
   bool first = true;
 
   if ((2U * size) > buffer_size_) {
-    printf("Data size is too large\n");
+    LOG_DEBUG(TAG, "Data size is too large");
     return false;
   } else if (size < (window_size_) && buffer_used_ < window_size_) {
-    printf("Data size is too small\n");
+    LOG_DEBUG(TAG, "Data size is too small");
     return false;
   } else {
     if ((buffer_start_ != buffer_size_) || buffer_used_ > 0U) {
@@ -311,12 +313,10 @@ void Mpx::ww_s() {
 
 void Mpx::prune_buffer() {
   // prune buffer
-  srand(time(nullptr));
-
   data_buffer_[0] = 0.001F;
 
   for (uint16_t i = 1U; i < buffer_size_; i++) {
-    float mock = (float)((rand() % 1000) - 500);
+    float mock = (float)((RAND() % 1000) - 500);
     mock /= 1000.0F;
     data_buffer_[i] = data_buffer_[i - 1] + mock;
   }
@@ -334,11 +334,9 @@ void Mpx::floss_iac_() {
   mpi = ((uint16_t *)calloc(this->profile_len_ + 1U, sizeof(uint16_t)));
 
   if (mpi == nullptr) {
-    printf("Memory allocation failed\n");
+    LOG_DEBUG(TAG, "Memory allocation failed");
     return;
   }
-
-  srand(time(nullptr));
 
   for (uint16_t i = 0U; i < this->profile_len_; i++) {
     this->iac_[i] = 0.0F;
@@ -346,14 +344,14 @@ void Mpx::floss_iac_() {
 
   for (uint16_t k = 0U; k < 10; k++) { // repeat 10 times to smooth the result
     for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
-      mpi[i] = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
+      mpi[i] = (RAND() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
     }
 
     for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
       uint16_t const j = mpi[i];
 
       if (j >= this->profile_len_) {
-        printf("j >= this->profile_len_\n");
+        LOG_DEBUG(TAG, "j >= this->profile_len_");
         continue;
       }
       // RMP, i is always < j
@@ -376,28 +374,26 @@ void Mpx::floss() {
     this->floss_[i] = 0.0F;
   }
 
-  // srand(time(NULL));
-
   for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
     int16_t const j = vprofile_index_[i];
 
     if (j >= this->profile_len_) {
-      printf("DEBUG: j >= this->profile_len_\n");
+      LOG_DEBUG(TAG, "DEBUG: j >= this->profile_len_");
       continue;
     }
 
     if (j < 0) {
       if (j < -1) {
-        printf("DEBUG: j < -1\n");
+        LOG_DEBUG(TAG, "DEBUG: j < -1");
       }
-      // printf("DEBUG: j < 0\n");
+      // LOG_DEBUG(TAG, "DEBUG: j < 0");
       // j = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
       // vprofile_index_[i] = j;
       continue;
     }
 
     if (j < i) {
-      printf("DEBUG: i = %d ; j = %d \n", i, j);
+      LOG_DEBUG(TAG, "DEBUG: i = %d ; j = %d ", i, j);
     }
     // RMP, i is always < j
     this->floss_[i] += 1.0F;
@@ -502,7 +498,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       // RMP
       // min off_diag is 0; max off_diag is (diag_end-1) == (profile_len_ - exclusion_zone_ - 1)
       if (c_cmp > vmatrix_profile_[off_diag]) {
-        // printf("%f\n", c_cmp);
+        // LOG_DEBUG(TAG, "%f", c_cmp);
         vmatrix_profile_[off_diag] = c_cmp;
         vprofile_index_[off_diag] = (int16_t)(offset); // + 1U);
       }
@@ -511,7 +507,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
 
   if (debug_wild_sig > 0U) {
     ;
-    // printf("DEBUG: wild sig: %u\n", debug_wild_sig);
+    // LOG_DEBUG(TAG, "DEBUG: wild sig: %u", debug_wild_sig);
   }
 
   return (this->buffer_size_ - this->buffer_used_);

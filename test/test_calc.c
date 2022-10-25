@@ -28,7 +28,7 @@ void test_function_calculator_multiplication(void)
 
 void test_function_calculator_division(void)
 {
-  TEST_ASSERT_EQUAL(32, division(100, 3));
+  TEST_ASSERT_EQUAL(25, division(100, 4));
 }
 
 void app_main()

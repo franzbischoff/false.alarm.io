@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_littlefs.h>
+// #include <esp_dsp.h>
 // #include "sdkconfig.h"
 // #include <nvs_flash.h>
 // #include <sys/param.h>
@@ -16,6 +17,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <freertos/ringbuf.h>
 
 #include <Mpx.hpp>
 
@@ -60,8 +62,9 @@ enum { CORE_0 = 0, CORE_1 = 1 };
 // MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-FILE* file;
+FILE *file;
 QueueHandle_t queue; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+RingbufHandle_t ring_buf;
 
 void task_compute(void *pv_parameters) // This is a task.
 {
@@ -89,6 +92,16 @@ void task_compute(void *pv_parameters) // This is a task.
       recv_count = 0;
 
       for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
+
+        size_t item_size;
+        char *item = (char *)xRingbufferReceive(ring_buf, &item_size, 0);
+
+        if (item != NULL) {
+          vRingbufferReturnItem(ring_buf, (void *)item);
+        } else {
+          ESP_LOGD(TAG, "Ringbuffer receive failed");
+        }
+
         if (xQueueReceive(queue, &data, 0)) {
           buffer[i] = data; // read data from queue
           recv_count = i + 1;
@@ -103,14 +116,21 @@ void task_compute(void *pv_parameters) // This is a task.
         mpx.compute(buffer, recv_count); /////////////////
         mpx.floss();
 
-        const uint16_t profile_len = mpx.get_profile_len();
+        // const uint16_t profile_len = mpx.get_profile_len();
         float *floss = mpx.get_floss();
         float *matrix = mpx.get_matrix();
 
         // for (uint16_t i = 0; i < recv_count; i++) {
-        //   ESP_LOGI(TAG, "%.1f %.2f %.2f\n", buffer[i], floss[floss_landmark + i],
+        //   ESP_LOGI(TAG, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
         //            matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
         // }
+        char log_buf[64];
+        for (uint16_t i = 0; i < recv_count; i++) {
+          // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
+          //                matrix[floss_landmark + i]);
+          sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]);
+          esp_rom_printf("%s\n", log_buf); // indexes[floss_landmark + i]);
+        }
         // ESP_LOGD(TAG, "[Consumer] %d\n", recv_count); // handle about 400 samples per second
         if (recv_count > 40) {
           delay_adjust -= 5;
@@ -228,41 +248,33 @@ void task_read_signal(void *pv_parameters) // This is a task.
 
     ir_res = 0.0F;
 
-
-
     if (file != nullptr) {
 
       char line[20];
 
-      line[0] = 'A';
-      line[1] = 'B';
-      line[2] = '\0';
-
-      ESP_LOGI(TAG, "line0: %s", line);
-
-      fgets(line, 20, file);
-
-      ESP_LOGI(TAG, "line: %s", line);
-
-      if (line[0] == '\0') {
-        ESP_LOGI(TAG, "End of file reached");
-        fclose(file);
-        file = nullptr;
+      if (fgets(line, sizeof(line), file) == nullptr) {
+        ESP_LOGI(TAG, "End of file reached, rewind");
+        rewind(file);
+        // file = nullptr;
         // All done, unmount partition and disable LittleFS
-        // esp_vfs_littlefs_unregister(conf.partition_label);
+
         // ESP_LOGI(TAG, "LittleFS unmounted");
 
+      } else {
+        float v = std::stof(line);
+        ir_res = v;
       }
-      // else {
-      //   float v = std::stof(line);
-      //   ir_res = v;
-      // }
     }
 
 #endif
 
       if (ir_res > 50.0F || ir_res < -50.0F) {
         continue;
+      }
+
+      UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 200));
+      if (res != pdTRUE) {
+        ESP_LOGD(TAG, "Failed to send item");
       }
 
       if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
@@ -289,9 +301,8 @@ extern "C" {
 #endif
 void app_main(void) {
 
-  uint16_t queue_size = QUEUE_SIZE;
-
   esp_log_level_set(TAG, ESP_LOG_DEBUG);
+  esp_log_level_set("mpx", ESP_LOG_ERROR);
 
   ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
   ESP_LOGD(TAG, "Max alloc Heap: %u", esp_get_minimum_free_heap_size());
@@ -315,16 +326,22 @@ void app_main(void) {
   //   ESP_LOGD(TAG, ", No PSRAM found\n");
   // }
 
-  queue = xQueueCreate(queue_size, sizeof(float));
+  queue = xQueueCreate(QUEUE_SIZE, sizeof(float));
+  ring_buf = xRingbufferCreate(QUEUE_SIZE * sizeof(float), RINGBUF_TYPE_NOSPLIT);
 
   if (queue == nullptr) {
     ESP_LOGE(TAG, "[Setup] Error creating the queue. Aborting.");
     esp_restart();
   }
 
+  if (ring_buf == nullptr) {
+    ESP_LOGE(TAG, "[Setup] Error creating the ring_buf. Aborting.");
+    esp_restart();
+  }
+
   ESP_LOGI(TAG, "Initializing LittleFS");
 
-  esp_vfs_littlefs_conf_t conf = {
+  esp_vfs_littlefs_conf_t const conf = {
       .base_path = "/littlefs",
       .partition_label = "littlefs",
       .format_if_mount_failed = false,
@@ -347,8 +364,9 @@ void app_main(void) {
   }
 
   size_t total = 0, used = 0;
+  ret = esp_littlefs_info(conf.partition_label, &total, &used);
 
-  ret = esp_littlefs_info("littlefs", &total, &used);
+  ESP_LOGI(TAG, "LittleFS: %u / %u", used, total);
 
   if (esp_littlefs_mounted("littlefs")) {
     ESP_LOGI(TAG, "LittleFS mounted");
@@ -356,12 +374,11 @@ void app_main(void) {
     ESP_LOGE(TAG, "LittleFS not mounted");
   }
 
-  ESP_LOGI(TAG, "LittleFS: %u / %u", used, total);
-
   file = fopen("/littlefs/floss.csv", "r");
 
   if (file == nullptr) {
     ESP_LOGE(TAG, "Failed to open file for reading");
+    esp_vfs_littlefs_unregister(conf.partition_label);
     return;
   }
 
@@ -387,7 +404,13 @@ void app_main(void) {
 
   ESP_LOGD(TAG, "Main is done");
   while (1) {
-    vTaskDelay((portTICK_PERIOD_MS * 1));
+
+    char taskbuffer[100];
+
+    vTaskGetRunTimeStats(taskbuffer);
+    ESP_LOGI(TAG, "%s", taskbuffer);
+
+    vTaskDelay((portTICK_PERIOD_MS * 5000));
   }
 }
 #ifdef __cplusplus
