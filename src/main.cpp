@@ -63,8 +63,7 @@ enum { CORE_0 = 0, CORE_1 = 1 };
 bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 FILE *file;
-QueueHandle_t queue; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-RingbufHandle_t ring_buf;
+RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void task_compute(void *pv_parameters) // This is a task.
 {
@@ -72,17 +71,14 @@ void task_compute(void *pv_parameters) // This is a task.
 
   const uint16_t floss_landmark = FLOSS_LANDMARK;
   float buffer[BUFFER_SIZE];
-  const uint16_t win_size = WIN_SIZE;
-  const uint16_t hist_size = HIST_SIZE;
   uint16_t recv_count;
   int16_t delay_adjust = 100;
-  float data = 0.0F;
 
   for (uint16_t i = 0; i < BUFFER_SIZE; i++) { // NOLINT(modernize-loop-convert)
     buffer[i] = 0.0F;
   }
 
-  MatrixProfile::Mpx mpx(win_size, 0.5F, 0, hist_size);
+  MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE);
   mpx.prune_buffer();
 
   for (;;) // -H776 A Task shall never return or exit.
@@ -93,20 +89,19 @@ void task_compute(void *pv_parameters) // This is a task.
 
       for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
 
-        size_t item_size;
-        char *item = (char *)xRingbufferReceive(ring_buf, &item_size, 0);
+        size_t item_size; // size in bytes (usually 4 bytes)
+        float *data = (float *)xRingbufferReceive(ring_buf, &item_size, 0);
 
-        if (item != NULL) {
-          vRingbufferReturnItem(ring_buf, (void *)item);
-        } else {
-          ESP_LOGD(TAG, "Ringbuffer receive failed");
+        if (item_size > 4) {
+          ESP_LOGD(TAG, "Item_size: %u", item_size);
         }
 
-        if (xQueueReceive(queue, &data, 0)) {
-          buffer[i] = data; // read data from queue
+        if (data != nullptr) {
+          buffer[i] = *data; // read data from the ring buffer
           recv_count = i + 1;
+          vRingbufferReturnItem(ring_buf, (void *)data);
         } else {
-          break; // no more data in queue
+          break; // no more data in the ring buffer
         }
       }
 
@@ -124,13 +119,13 @@ void task_compute(void *pv_parameters) // This is a task.
         //   ESP_LOGI(TAG, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
         //            matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
         // }
-        char log_buf[64];
-        for (uint16_t i = 0; i < recv_count; i++) {
-          // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
-          //                matrix[floss_landmark + i]);
-          sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]);
-          esp_rom_printf("%s\n", log_buf); // indexes[floss_landmark + i]);
-        }
+        // char log_buf[64];
+        // for (uint16_t i = 0; i < recv_count; i++) {
+        //   // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
+        //   //                matrix[floss_landmark + i]);
+        //   sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]);
+        //   esp_rom_printf("%s\n", log_buf); // indexes[floss_landmark + i]);
+        // }
         // ESP_LOGD(TAG, "[Consumer] %d\n", recv_count); // handle about 400 samples per second
         if (recv_count > 40) {
           delay_adjust -= 5;
@@ -272,20 +267,17 @@ void task_read_signal(void *pv_parameters) // This is a task.
         continue;
       }
 
-      UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 200));
-      if (res != pdTRUE) {
-        ESP_LOGD(TAG, "Failed to send item");
-      }
+      UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
 
-      if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
+      if (res == pdTRUE) {
         if (!buffer_init) {
           if (++initial_counter >= BUFFER_SIZE) {
             buffer_init = true; // this is read by the receiver task
-            ESP_LOGD(TAG, "[Producer] DEBUG: Buffer filled, starting to compute\n");
+            ESP_LOGD(TAG, "[Producer] DEBUG: Buffer started, starting to compute\n");
           }
         }
       } else {
-        ESP_LOGD(TAG, "[Producer] Error sending data to the queue\n");
+        ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
       }
 #ifndef FILE_DATA
     } else {
@@ -326,13 +318,7 @@ void app_main(void) {
   //   ESP_LOGD(TAG, ", No PSRAM found\n");
   // }
 
-  queue = xQueueCreate(QUEUE_SIZE, sizeof(float));
-  ring_buf = xRingbufferCreate(QUEUE_SIZE * sizeof(float), RINGBUF_TYPE_NOSPLIT);
-
-  if (queue == nullptr) {
-    ESP_LOGE(TAG, "[Setup] Error creating the queue. Aborting.");
-    esp_restart();
-  }
+  ring_buf = xRingbufferCreate(QUEUE_SIZE * (sizeof(float) + 8) /*overhead*/, RINGBUF_TYPE_NOSPLIT);
 
   if (ring_buf == nullptr) {
     ESP_LOGE(TAG, "[Setup] Error creating the ring_buf. Aborting.");
@@ -408,7 +394,7 @@ void app_main(void) {
     char taskbuffer[100];
 
     vTaskGetRunTimeStats(taskbuffer);
-    ESP_LOGI(TAG, "%s", taskbuffer);
+    ESP_LOGI(TAG, "\n%s", taskbuffer);
 
     vTaskDelay((portTICK_PERIOD_MS * 5000));
   }
