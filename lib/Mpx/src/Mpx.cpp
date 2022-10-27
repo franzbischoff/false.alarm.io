@@ -4,7 +4,7 @@
 
 #include "Mpx.hpp"
 
-static char *TAG = "mpx";
+static const char TAG[] = "mpx";
 
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
@@ -34,7 +34,7 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
   this->prune_buffer();
 }
 
-void Mpx::movmean() {
+void Mpx::movmean_() {
 
   float accum = this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -74,7 +74,7 @@ void Mpx::movmean() {
   this->last_resid_ = resid;
 }
 
-void Mpx::movsig() {
+void Mpx::movsig_() {
 
   float accum = this->data_buffer_[buffer_start_] * this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -131,11 +131,11 @@ void Mpx::movsig() {
   this->last_resid2_ = resid;
 }
 
-void Mpx::muinvn(uint16_t size) {
+void Mpx::muinvn_(uint16_t size) {
 
   if (size == 0U) {
-    movmean();
-    movsig();
+    movmean_();
+    movsig_();
     return;
   }
 
@@ -192,7 +192,7 @@ void Mpx::muinvn(uint16_t size) {
   this->last_resid2_ = resid2;
 }
 
-bool Mpx::new_data(const float *data, uint16_t size) {
+bool Mpx::new_data_(const float *data, uint16_t size) {
 
   bool first = true;
 
@@ -235,7 +235,7 @@ bool Mpx::new_data(const float *data, uint16_t size) {
   return first;
 }
 
-void Mpx::mp_next(uint16_t size) {
+void Mpx::mp_next_(uint16_t size) {
 
   uint16_t const j = this->profile_len_ - size;
 
@@ -257,7 +257,7 @@ void Mpx::mp_next(uint16_t size) {
   }
 }
 
-void Mpx::ddf(uint16_t size) {
+void Mpx::ddf_(uint16_t size) {
   // differentials have 0 as their first entry. This simplifies index
   // calculations slightly and allows us to avoid special "first line"
   // handling.
@@ -281,7 +281,7 @@ void Mpx::ddf(uint16_t size) {
   this->vddf_[range_] = 0.0F;
 }
 
-void Mpx::ddg(uint16_t size) {
+void Mpx::ddg_(uint16_t size) {
   // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
   // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
   // window)
@@ -305,7 +305,7 @@ void Mpx::ddg(uint16_t size) {
   this->vddg_[range_] = 0.0F;
 }
 
-void Mpx::ww_s() {
+void Mpx::ww_s_() {
   for (uint16_t i = 0U; i < window_size_; i++) {
     this->vww_[i] = (this->data_buffer_[range_ + i] - this->vmmu_[range_]);
   }
@@ -322,9 +322,9 @@ void Mpx::prune_buffer() {
   }
   buffer_used_ = buffer_size_;
   buffer_start_ = 0;
-  muinvn(0U);
-  ddf(0U);
-  ddg(0U);
+  muinvn_(0U);
+  ddf_(0U);
+  ddg_(0U);
 }
 
 void Mpx::floss_iac_() {
@@ -436,20 +436,20 @@ void Mpx::floss() {
 // cppcheck-suppress unusedFunction
 uint16_t Mpx::compute(const float *data, uint16_t size) {
 
-  bool const first = new_data(data, size); // store new data on buffer
+  bool const first = new_data_(data, size); // store new data on buffer
 
   if (first) {
-    muinvn(0U);
-    ddf(0U);
-    ddg(0U);
+    muinvn_(0U);
+    ddf_(0U);
+    ddg_(0U);
   } else {
-    muinvn(size);  // compute next mean and sig
-    ddf(size);     // compute next ddf
-    ddg(size);     // compute next ddg
-    mp_next(size); // shift MP
+    muinvn_(size);  // compute next mean and sig
+    ddf_(size);     // compute next ddf
+    ddg_(size);     // compute next ddg
+    mp_next_(size); // shift MP
   }
 
-  ww_s();
+  ww_s_();
 
   // if (time_constraint_ > 0) {
   //   diag_start = buffer_size_ - time_constraint_ - window_size_;

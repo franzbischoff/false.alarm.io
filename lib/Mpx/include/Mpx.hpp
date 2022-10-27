@@ -11,7 +11,7 @@
 // #include <CircularBuffer.h>
 #define RAND() rand()
 #define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
-#else
+#elif defined(ESP_PLATFORM)
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -43,18 +43,10 @@ public:
   // cppcheck-suppress noExplicitConstructor
   Mpx(uint16_t window_size, float ez = 0.5F, uint16_t time_constraint = 0U, uint16_t buffer_size = 5000U);
   ~Mpx(); // destructor
-  // void Compute();
-  bool new_data(const float *data, uint16_t size);
+
   uint16_t compute(const float *data, uint16_t size);
   void prune_buffer();
   void floss();
-  void movmean();
-  void movsig();
-  void muinvn(uint16_t size = 0U);
-  void mp_next(uint16_t size = 0U);
-  void ddf(uint16_t size = 0U);
-  void ddg(uint16_t size = 0U);
-  void ww_s();
 
   // Getters
   float *get_data_buffer() { return data_buffer_; };
@@ -67,14 +59,22 @@ public:
   float *get_ddf() { return vddf_; };
   float *get_ddg() { return vddg_; };
   float *get_vww() { return vww_; };
-  const uint16_t get_buffer_used() { return buffer_used_; };
-  const int16_t get_buffer_start() { return buffer_start_; };
-  const uint16_t get_profile_len() { return profile_len_; };
-  const float get_last_movsum() { return last_accum_ + last_resid_; };
-  const float get_last_mov2sum() { return last_accum2_ + last_resid2_; };
+  uint16_t get_buffer_used() { return buffer_used_; };
+  int16_t get_buffer_start() { return buffer_start_; };
+  uint16_t get_profile_len() { return profile_len_; };
+  float get_last_movsum() { return last_accum_ + last_resid_; };
+  float get_last_mov2sum() { return last_accum2_ + last_resid2_; };
 
 private:
+  bool new_data_(const float *data, uint16_t size);
   void floss_iac_();
+  void movmean_();
+  void movsig_();
+  void muinvn_(uint16_t size = 0U);
+  void mp_next_(uint16_t size = 0U);
+  void ddf_(uint16_t size = 0U);
+  void ddg_(uint16_t size = 0U);
+  void ww_s_();
 
   const uint16_t window_size_;
   const float ez_;

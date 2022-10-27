@@ -5,13 +5,6 @@
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_littlefs.h>
-// #include <esp_dsp.h>
-// #include "sdkconfig.h"
-// #include <nvs_flash.h>
-// #include <sys/param.h>
-// #include <cstring>
-// #include <fstream>
-// #include <iostream>
 #include <cmath>
 
 #include <freertos/FreeRTOS.h>
@@ -23,21 +16,12 @@
 
 // #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
 
-static char *TAG = "main";
-
 //>> Matrix Profile settings are defined on compile time
+#ifndef FILE_DATA
 #define RESPIN 4
 #define MFIOPIN 2
 #define MYSDA 21
 #define MYSCL 22
-#define WIN_SIZE WINDOW_SIZE
-#define S_SAMPLES SENSOR_SAMPLES
-#define S_WIDTH SENSOR_WIDTH
-#define SAMPLING_HZ SAMPLING_RATE_HZ
-#define HIST_SIZE (HISTORY_SIZE_S * SAMPLING_HZ)
-#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
-#define BUFFER_SIZE (WIN_SIZE + WIN_SIZE) // must be at least 2x the window_size
-#define QUEUE_SIZE (BUFFER_SIZE + 20)     // queue must have a little more room
 
 #ifndef SHORT_FILTER
 #define SHORT_FILTER (SAMPLING_HZ / 10)
@@ -45,26 +29,40 @@ static char *TAG = "main";
 #ifndef WANDER_FILTER
 #define WANDER_FILTER (SAMPLING_HZ / 2)
 #endif
+#endif
+
+#define WIN_SIZE WINDOW_SIZE
+#define S_SAMPLES SENSOR_SAMPLES
+#define S_WIDTH SENSOR_WIDTH
+#define SAMPLING_HZ SAMPLING_RATE_HZ
+#define HIST_SIZE (HISTORY_SIZE_S * SAMPLING_HZ)
+#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
+#define BUFFER_SIZE (WIN_SIZE)              // must be at least 2x the window_size
+#define RING_BUFFER_SIZE (BUFFER_SIZE + 20) // queue must have a little more room
 
 // ESP_PLATFORM
 
 //>> multitask configurations
 void task_compute(void *pv_parameters);
 void task_read_signal(void *pv_parameters);
-void mon_task(void *pv_parameters);
-void idle_task(void *pv_parameters);
+enum CORES { CORE_0 = 0, CORE_1 = 1 };
 
-enum { CORE_0 = 0, CORE_1 = 1 };
+//>> log tag
+static const char TAG[] = "main";
+#ifndef MAIN_LOG_LEVEL
+#define MAIN_LOG_LEVEL ESP_LOG_INFO
+#endif
 
-// float values[QUEUE_SIZE]; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-// uint16_t recv_count = 0;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-// uint32_t read_line = 0;   // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-// MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+//>> global variables
+static bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-FILE *file;
-RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+#if defined(FILE_DATA)
+static FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+#endif
 
+/// @brief Task to compute the matrix profile
+/// @param pv_parameters pointer to the task parameters
 void task_compute(void *pv_parameters) // This is a task.
 {
   (void)pv_parameters;
@@ -108,6 +106,8 @@ void task_compute(void *pv_parameters) // This is a task.
       if (recv_count > 0) {
         // ESP_LOGD(TAG, "Compute %u\n", uxTaskGetStackHighWaterMark(NULL));
 
+        ESP_LOGI(TAG, "recv_count: %u", recv_count);
+
         mpx.compute(buffer, recv_count); /////////////////
         mpx.floss();
 
@@ -115,25 +115,23 @@ void task_compute(void *pv_parameters) // This is a task.
         float *floss = mpx.get_floss();
         float *matrix = mpx.get_matrix();
 
-        // for (uint16_t i = 0; i < recv_count; i++) {
-        //   ESP_LOGI(TAG, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
-        //            matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
-        // }
-        // char log_buf[64];
-        // for (uint16_t i = 0; i < recv_count; i++) {
-        //   // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
-        //   //                matrix[floss_landmark + i]);
-        //   sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]);
-        //   esp_rom_printf("%s\n", log_buf); // indexes[floss_landmark + i]);
-        // }
+        if (esp_log_level_get(TAG) >= ESP_LOG_DEBUG) {
+          char log_buf[64];
+          for (uint16_t i = 0; i < 1; i++) {
+            // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
+            //                matrix[floss_landmark + i]);
+            sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]); // NOLINT(cert-err33-c)
+            esp_rom_printf("%s\n", log_buf);                                      // indexes[floss_landmark + i]);
+          }
+        }
         // ESP_LOGD(TAG, "[Consumer] %d\n", recv_count); // handle about 400 samples per second
-        if (recv_count > 40) {
+        if (recv_count > 30) {
           delay_adjust -= 5;
           if (delay_adjust <= 0) {
             delay_adjust = 1;
           }
         } else {
-          if (recv_count < 20) {
+          if (recv_count < 10) {
             delay_adjust += 5;
           }
         }
@@ -147,6 +145,8 @@ void task_compute(void *pv_parameters) // This is a task.
   }
 }
 
+/// @brief Task to read the signal from the sensor
+/// @param pv_parameters pointer to the task parameters
 void task_read_signal(void *pv_parameters) // This is a task.
 {
   (void)pv_parameters;
@@ -267,7 +267,7 @@ void task_read_signal(void *pv_parameters) // This is a task.
         continue;
       }
 
-      UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
+      const UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
 
       if (res == pdTRUE) {
         if (!buffer_init) {
@@ -291,9 +291,10 @@ void task_read_signal(void *pv_parameters) // This is a task.
 #ifdef __cplusplus
 extern "C" {
 #endif
+/// @brief main function
 void app_main(void) {
 
-  esp_log_level_set(TAG, ESP_LOG_DEBUG);
+  esp_log_level_set(TAG, MAIN_LOG_LEVEL);
   esp_log_level_set("mpx", ESP_LOG_ERROR);
 
   ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
@@ -317,14 +318,14 @@ void app_main(void) {
   // } else {
   //   ESP_LOGD(TAG, ", No PSRAM found\n");
   // }
-
-  ring_buf = xRingbufferCreate(QUEUE_SIZE * (sizeof(float) + 8) /*overhead*/, RINGBUF_TYPE_NOSPLIT);
+  ring_buf = xRingbufferCreateNoSplit(sizeof(float), RING_BUFFER_SIZE);
 
   if (ring_buf == nullptr) {
     ESP_LOGE(TAG, "[Setup] Error creating the ring_buf. Aborting.");
     esp_restart();
   }
 
+#if defined(FILE_DATA)
   ESP_LOGI(TAG, "Initializing LittleFS");
 
   esp_vfs_littlefs_conf_t const conf = {
@@ -363,38 +364,80 @@ void app_main(void) {
   file = fopen("/littlefs/floss.csv", "r");
 
   if (file == nullptr) {
-    ESP_LOGE(TAG, "Failed to open file for reading");
     esp_vfs_littlefs_unregister(conf.partition_label);
+    ESP_LOGE(TAG, "Failed to open file for reading");
     return;
   }
+#endif
 
   ESP_LOGD(TAG, "Creating task 0");
 
-  xTaskCreatePinnedToCore(task_read_signal, // Task function
-                          "ReadSignal",     // Just a name
-                          40000,            // Stack size in `word`s
-                          nullptr,          // Parameter passed as input of the task (can be NULL)
-                          3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_0);
+  TaskHandle_t read_task_handle = nullptr;
+  TaskHandle_t compute_task_handle = nullptr;
+  BaseType_t res;
+
+  res = xTaskCreatePinnedToCore(
+      task_read_signal,     // Task function
+      "ReadSignal",         // Just a name
+      20000,                // Stack size in bytes
+      nullptr,              // Parameter passed as input of the task (can be NULL)
+      tskIDLE_PRIORITY + 3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+      &read_task_handle,    // Task Handle (can be NULL)
+      CORE_0);
+
+  configASSERT(read_task_handle);
+
+  if (res == pdPASS) {
+    ESP_LOGD(TAG, "Task ReadSignal created");
+  } else {
+    ESP_LOGE(TAG, "Failed to create task ReadSignal");
+  }
 
   ESP_LOGD(TAG, "Creating task 1");
 
-  xTaskCreatePinnedToCore(task_compute, // Task function
-                          "Compute",    // Just a name
-                          40000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          nullptr, // Parameter passed as input of the task (can be NULL)
-                          3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_1);
+  res = xTaskCreatePinnedToCore(
+      task_compute,         // Task function
+      "Compute",            // Just a name
+      20000,                // This stack size in bytes can be checked & adjusted by reading the Stack Highwater
+      nullptr,              // Parameter passed as input of the task (can be NULL)
+      tskIDLE_PRIORITY + 3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+      &compute_task_handle, // Task Handle (can be NULL)
+      CORE_1);
 
-  ESP_LOGD(TAG, "Main is done");
-  while (1) {
+  configASSERT(compute_task_handle);
 
-    char taskbuffer[100];
+  if (res == pdPASS) {
+    ESP_LOGD(TAG, "Task Compute created");
+  } else {
+    ESP_LOGE(TAG, "Failed to create task Compute");
+  }
 
-    vTaskGetRunTimeStats(taskbuffer);
-    ESP_LOGI(TAG, "\n%s", taskbuffer);
+  ESP_LOGD(TAG, "Main entering in infinite loop");
+  while (true) {
+
+#if defined(__PLATFORMIO_BUILD_DEBUG__)
+    if (esp_log_level_get(TAG) == ESP_LOG_VERBOSE) {
+
+      ESP_LOGV(TAG, "Task Compute StackHighWaterMark: %u", uxTaskGetStackHighWaterMark(compute_task_handle));
+      ESP_LOGV(TAG, "Task Read    StackHighWaterMark: %u", uxTaskGetStackHighWaterMark(read_task_handle));
+      ESP_LOGV(TAG, "Minimum  8bits-aligned Free Heap: %u", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+      ESP_LOGV(TAG, "Minimum 32bits-aligned Free Heap: %u", heap_caps_get_minimum_free_size(MALLOC_CAP_32BIT));
+      ESP_LOGV(TAG, "Current  8bits-aligned Free Heap: %u/%u", heap_caps_get_free_size(MALLOC_CAP_8BIT),
+               heap_caps_get_total_size(MALLOC_CAP_8BIT));
+      ESP_LOGV(TAG, "Current 32bits-aligned Free Heap: %u/%u", heap_caps_get_free_size(MALLOC_CAP_32BIT),
+               heap_caps_get_total_size(MALLOC_CAP_32BIT));
+      xRingbufferPrintInfo(ring_buf);
+
+#if defined(LOG_CPU_LOAD)
+      char taskbuffer[100];
+      vTaskGetRunTimeStats(taskbuffer);
+      ESP_LOGV(TAG, "\n%s", taskbuffer);
+#endif
+
+      // pxTaskStatusArray = (TaskStatus_t *)pvPortMalloc(arraysize * sizeof(TaskStatus_t));
+      // vPortFree(pxTaskStatusArray);
+    }
+#endif
 
     vTaskDelay((portTICK_PERIOD_MS * 5000));
   }
