@@ -9,17 +9,17 @@ static const char TAG[] = "mpx";
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
-      buffer_start_((int16_t)buffer_size), profile_len_(buffer_size - window_size_ + 1U), range_(profile_len_ - 1U),
-      exclusion_zone_((uint16_t)(roundf((float)window_size_ * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
-      data_buffer_((float *)calloc(buffer_size_ + 1U, sizeof(float))),
-      vmatrix_profile_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vprofile_index_((int16_t *)calloc(profile_len_ + 1U, sizeof(int16_t))),
-      floss_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      iac_((float *)calloc(profile_len_ + 1U, sizeof(float))), vmmu_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vsig_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vddf_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vddg_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vww_((float *)calloc(window_size_ + 1U, sizeof(float))) {
+      buffer_start_(static_cast<int16_t>(buffer_size)), profile_len_(buffer_size - window_size_ + 1U), range_(profile_len_ - 1U),
+      exclusion_zone_(static_cast<uint16_t>(roundf(static_cast<float>(window_size_) * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
+      data_buffer_(std::make_unique<float[]>(buffer_size_ + 1U).release()),
+      vmatrix_profile_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vprofile_index_(std::make_unique<int16_t[]>(profile_len_ + 1U).release()),
+      floss_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      iac_(std::make_unique<float[]>(profile_len_ + 1U).release()), vmmu_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vsig_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vddf_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vddg_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vww_(std::make_unique<float[]>(window_size_ + 1U).release()) {
 
   // change the default value to 0
 
@@ -476,7 +476,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       off_min = range_ - i - 1;
     } else {
       // cppcheck-suppress duplicateExpression
-      off_min = MAX(range_ - size, range_ - i - 1); // -V501
+      off_min = std::max(range_ - size, range_ - i - 1); // -V501
     }
 
     uint16_t const off_start = range_;

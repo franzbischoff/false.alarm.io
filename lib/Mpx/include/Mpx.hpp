@@ -16,6 +16,7 @@
   #define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
 #elif defined(ESP_PLATFORM)
   // ESP-IDF framework (espressif32)
+  #include <algorithm>
   #include <cmath>
   #include <cstdio>
   #include <cstdlib>
@@ -28,13 +29,6 @@
 
 #if !defined(NULL)
 #define NULL 0
-#endif
-
-#if !defined(MIN)
-#define MIN(y, x) ((x) < (y) && (x) == (x) ? (x) : (y))
-#endif
-#if !defined(MAX)
-#define MAX(y, x) ((x) > (y) && (x) == (x) ? (x) : (y))
 #endif
 
 // uint16_t = 0 to 65535
