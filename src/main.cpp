@@ -4,6 +4,7 @@
 
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_chip_info.h>
 #include <esp_littlefs.h>
 #include <cmath>
 
@@ -112,7 +113,7 @@ void task_compute(void *pv_parameters) // This is a task.
         mpx.floss();
 
         // const uint16_t profile_len = mpx.get_profile_len();
-        float *floss = mpx.get_floss();
+        (void)mpx.get_floss();
         float *matrix = mpx.get_matrix();
 
         if (esp_log_level_get(TAG) >= ESP_LOG_DEBUG) {

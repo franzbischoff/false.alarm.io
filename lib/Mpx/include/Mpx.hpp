@@ -2,25 +2,28 @@
 #define Mpx_h
 
 #if defined(RASPBERRYPI)
-#include <stdio.h>
-#include <stdint.h>
-#include <memory>
-#include <cmath>
+  // Bare metal RaspberryPi build
+  #include <stdio.h>
+  #include <stdint.h>
+  #include <memory>
+  #include <cmath>
+  #define RAND() rand()
+  #define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
 #elif !defined(ESP_PLATFORM) && (defined(ARDUINO_ESP32_DEV) || defined(ARDUINO_RASPBERRY_PI_PICO))
-#include <Arduino.h>
-// #include <CircularBuffer.h>
-#define RAND() rand()
-#define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
+  // Arduino-based ESP32 or Pico (not ESP-IDF)
+  #include <Arduino.h>
+  #define RAND() rand()
+  #define LOG_DEBUG(format, ...) printf(format, ##__VA_ARGS__)
 #elif defined(ESP_PLATFORM)
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <memory>
-#include <esp_random.h>
-#include <esp_log.h>
-
-#define RAND() (int32_t)(esp_random())
-#define LOG_DEBUG(tag, format, ...) ESP_LOGD(tag, format, ##__VA_ARGS__)
+  // ESP-IDF framework (espressif32)
+  #include <cmath>
+  #include <cstdio>
+  #include <cstdlib>
+  #include <memory>
+  #include <esp_random.h>
+  #include <esp_log.h>
+  #define RAND() (int32_t)(esp_random())
+  #define LOG_DEBUG(tag, format, ...) ESP_LOGD(tag, format, ##__VA_ARGS__)
 #endif
 
 #if !defined(NULL)
