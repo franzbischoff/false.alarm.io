@@ -162,3 +162,4 @@ pio-tools/
 api/
 esp32_par*.csv
 dev/
+rcpp/

@@ -21,7 +21,11 @@
 #include <cstdlib>
 #include <memory>
 #define RAND() rand()
+#ifdef NDEBUG
+#define LOG_DEBUG(tag, format, ...) (void)0  // No-op in release mode
+#else
 #define LOG_DEBUG(tag, format, ...) std::printf("[%s] " format "\n", tag, ##__VA_ARGS__)
+#endif
 #endif
 
 #if !defined(NULL)

@@ -2,6 +2,17 @@
 
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 
+#if !defined(ESP_PLATFORM)
+
+#include <cstdio>
+
+int main() {
+  std::puts("native build: ESP-IDF app_main is disabled");
+  return 0;
+}
+
+#else
+
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_chip_info.h>
@@ -445,4 +456,6 @@ void app_main(void) {
 }
 #ifdef __cplusplus
 }
+#endif
+
 #endif

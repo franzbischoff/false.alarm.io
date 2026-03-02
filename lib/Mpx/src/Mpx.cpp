@@ -9,13 +9,16 @@ static const char TAG[] = "mpx";
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
-      buffer_start_(static_cast<int16_t>(buffer_size)), profile_len_(buffer_size - window_size_ + 1U), range_(profile_len_ - 1U),
-      exclusion_zone_(static_cast<uint16_t>(roundf(static_cast<float>(window_size_) * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
+      buffer_start_(static_cast<int16_t>(buffer_size)), profile_len_(buffer_size - window_size_ + 1U),
+      range_(profile_len_ - 1U),
+      exclusion_zone_(
+          static_cast<uint16_t>(roundf(static_cast<float>(window_size_) * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
       data_buffer_(std::make_unique<float[]>(buffer_size_ + 1U).release()),
       vmatrix_profile_(std::make_unique<float[]>(profile_len_ + 1U).release()),
       vprofile_index_(std::make_unique<int16_t[]>(profile_len_ + 1U).release()),
       floss_(std::make_unique<float[]>(profile_len_ + 1U).release()),
-      iac_(std::make_unique<float[]>(profile_len_ + 1U).release()), vmmu_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      iac_(std::make_unique<float[]>(profile_len_ + 1U).release()),
+      vmmu_(std::make_unique<float[]>(profile_len_ + 1U).release()),
       vsig_(std::make_unique<float[]>(profile_len_ + 1U).release()),
       vddf_(std::make_unique<float[]>(profile_len_ + 1U).release()),
       vddg_(std::make_unique<float[]>(profile_len_ + 1U).release()),
@@ -327,6 +330,23 @@ void Mpx::prune_buffer() {
   ddg_(0U);
 }
 
+/**
+ * @brief Compute Ideal Arc Counts (IAC) using Monte Carlo simulation
+ *
+ * Generates the expected arc count distribution for random matrix profile indices.
+ * This is used as normalization in FLOSS to correct for edge effects.
+ *
+ * @note Implementation approach:
+ * - Performs 10 iterations of random matching within exclusion zone constraints
+ * - Each iteration contributes 0.1 to arc counts (10 * 0.1 = 1.0 total)
+ * - Results in a smoother approximation compared to analytical Beta distribution
+ *
+ * @note Difference from R reference (fluss.R):
+ * R uses analytical Kumaraswamy distribution: a * b * x^(a-1) * (1 - x^a)^(b-1) * cac_size / 4.035477
+ *   where a = 1.939274, b = 1.698150 (for mp_offset > 0, the streaming case)
+ * C++ uses Monte Carlo approximation for performance (avoids repeated pow() calls)
+ * The distributions are expected to be very similar in practice.
+ */
 void Mpx::floss_iac_() {
 
   uint16_t *mpi = nullptr;
@@ -367,6 +387,28 @@ void Mpx::floss_iac_() {
   free(mpi); // test for edit session
 }
 
+/**
+ * @brief FLOSS - Fast Low-cost Online Semantic Segmentation
+ *
+ * Computes corrected arc counts for semantic segmentation based on the matrix profile index.
+ *
+ * @note Implementation differences from R reference (fluss.R):
+ *
+ * 1. Arc Counting: This implementation assumes RMP (Right Matrix Profile) only, where i < j always.
+ *    The R reference uses min(i,j) and max(i,j) to handle both LMP and RMP.
+ *    Since this project only implements RMP, we can assume i < j and save CPU cycles.
+ *
+ * 2. Ideal Arc Counts: Uses Monte Carlo simulation (floss_iac_) instead of analytical Kumaraswamy distribution.
+ *    R uses: a * b * x^(a-1) * (1 - x^a)^(b-1) * cac_size / 4.035477
+ *            where a = 1.939274, b = 1.698150 (for streaming case with mp_offset > 0)
+ *    C++ uses: 10 iterations of random matching to approximate the ideal distribution.
+ *    Results are expected to be very similar, with performance benefits from avoiding pow() calls.
+ *
+ * 3. Edge Correction: Uses window_size for boundary detection instead of exclusion_zone.
+ *    R: corrected_arc_counts[1:min(exclusion_zone, cac_size)] <- 1
+ *    C++: if (i < window_size_ || i > (profile_len_ - window_size_))
+ *    Behavior is similar for typical configurations where exclusion_zone ≈ window_size * ez.
+ */
 // cppcheck-suppress unusedFunction
 void Mpx::floss() {
 
