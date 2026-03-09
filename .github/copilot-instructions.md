@@ -6,36 +6,45 @@
 - **End of session**: When the user informs you that the day's work is finished, update this file with the most recent information regarding the project's status, architectural changes, and pending tasks.
 
 ## Big picture
-- This is an ESP-IDF/PlatformIO firmware project centered on streaming matrix-profile analysis for signal data.
+- ESP-IDF 5.5.3/PlatformIO firmware project for streaming matrix-profile analysis on ESP32 hardware.
 - Runtime entrypoint is `src/main.cpp`; processing logic lives in `lib/Mpx` (`Mpx.hpp`/`Mpx.cpp`).
-- The app uses two pinned FreeRTOS tasks with a producer/consumer flow:
+- The app uses two pinned FreeRTOS tasks with producer/consumer flow:
   - `task_read_signal` produces `float` samples at `SAMPLING_RATE_HZ`.
   - `task_compute` consumes samples from a ring buffer and runs `MatrixProfile::Mpx::compute()` + `floss()`.
 - Compile-time macros in `platformio.ini` define algorithm behavior (`WINDOW_SIZE`, `HISTORY_SIZE_S`, `FLOSS_LANDMARK_S`, etc.). Treat these as the primary tuning interface.
 
-## Data flow and integration points
-- Current default build enables `FILE_DATA=1` (see `platformio.ini` `build_src_flags`), so sensor input is read from LittleFS file `/littlefs/floss.csv`.
-- LittleFS is mounted in `app_main()` via `esp_vfs_littlefs_register()` with partition label `littlefs`; partition table is `partitions.csv`.
-- `partitions.csv` must keep a `littlefs` data partition; changing partition names/sizes can break runtime file input.
-- `components/esp_littlefs` is vendored (joltwallet `v1.5.0`) and includes `mklittlefs` tooling docs.
+## Build and test environments
+- **esp32idf** (default): Main firmware for SparkFun ESP32 IoT RedBoard on COM4
+  - Build: `platformio run -e esp32idf`
+  - Upload: `platformio run -e esp32idf -t upload`
+  - Monitor: `platformio device monitor -b 115200`
+- **native**: Desktop x86-64 tests (Unity framework, 20 tests, ~25s)
+  - Test: `platformio test -e native`
+- **esp32_test**: Hardware tests with SD card (SDSPI, Unity framework, 20 tests, ~1m44s)
+  - Test: `platformio test -e esp32_test`
+  - Requires SD card with `test_data.csv` and `golden_reference.csv` (FATFS 8.3 names: `TEST_D~1.CSV`, `GOLDEN~1.CSV`)
+  - Default pins: MISO=19, MOSI=23, SCK=18, CS=5
 
-## Build, run, and debug workflow
-- Primary environment is `esp32idf` (`platformio.ini`, default env).
-- Typical CLI loop:
-  - `platformio run -e esp32idf`
-  - `platformio run -e esp32idf -t upload`
-  - `platformio device monitor -b 115200`
-- VS Code tasks already define:
-  - `PlatformIO: Remote Upload (esp32idf)`
-  - `PlatformIO: Remote Monitor` (depends on upload)
-- `upload_port`, `monitor_port`, and `debug_port` are pinned to `COM4` in `platformio.ini`; keep this in mind when reproducing issues.
-- Debug launch configs are auto-generated in `.vscode/launch.json` and target `build/esp32idf/firmware.elf`.
+## Data flow and storage
+- Default build uses `FILE_DATA=1` to read sensor input from LittleFS file `/littlefs/floss.csv`.
+- LittleFS mounted in `app_main()` via `esp_vfs_littlefs_register()` with partition label `littlefs` (`partitions.csv`).
+- Test environment (`esp32_test`) uses SD card via SDSPI for golden reference validation.
+- Vendored component: `components/esp_littlefs` (joltwallet v1.5.0).
+
+
 
 ## Project-specific coding patterns
-- C/C++ style is 2-space indentation (`.editorconfig`, `.clang-format`), with C++11 (`.clang-format` `Standard: c++11`).
-- `lib/Mpx` uses trailing underscores for private members/methods (e.g., `data_buffer_`, `movmean_()`); preserve this naming convention.
-- The codebase intentionally uses some global state in embedded paths (task handles, ring buffer, flags) with explicit analyzer suppressions; do not “clean up” these patterns unless requested.
-- Keep memory behavior predictable: `Mpx` allocates fixed buffers up front; avoid adding dynamic allocations in high-frequency task loops.
+- C++17 standard (GCC 14.2.0) with 2-space indentation (`.editorconfig`, `.clang-format`).
+- `lib/Mpx` uses trailing underscores for private members/methods (e.g., `data_buffer_`, `movmean_()`); preserve this convention.
+- RAII with `std::make_unique<T[]>()` for memory safety; avoid dynamic allocations in high-frequency task loops.
+- Global state in embedded paths (task handles, ring buffer, flags) is intentional with explicit analyzer suppressions; do not "clean up" unless requested.
+- Deterministic behavior: `prune_buffer()` uses sinusoidal pattern; `floss_iac_()` uses analytical Kumaraswamy distribution (not Monte Carlo).
+
+## Testing strategy
+- Unity framework with 20 tests: 3 functional, 15 robustness, 2 golden reference.
+- Golden tests validate against `test_data.csv` (27,000 samples processed) with 1e-5 tolerance.
+- Test files: `test/test_mpx.cpp`, `test/test_mpx_robustness.cpp`, `test/test_mpx_golden.cpp`.
+- Documentation: `test/TEST_STRATEGY.md`, `test/README_ESP32_TESTING.md`.
 
 ## Documentation and Communication Style
 - **Markdown Management**: Do not create additional Markdown documentation files without first asking the user. All documentation changes must be made to existing files unless explicitly requested otherwise.
@@ -43,6 +52,5 @@
 - **Tone**: Maintain a professional, clean, and academic appearance. Avoid any formatting that suggests automatic AI generation. Use simple, direct, and credible text.
 
 ## Quality and checks
-- Static analysis is configured in `platformio.ini` (`cppcheck`, `clangtidy`, `pvs-studio`) and tuned via `.clang-tidy`.
-- Unit-test scaffolding exists under `test/` (Unity example with calculator library), but app behavior is mainly validated through target runs/monitor output.
-- Prefer small, surgical changes in `src/main.cpp` and `lib/Mpx/*`; avoid broad refactors across vendored `components/` unless fixing that dependency directly.
+- Static analysis configured in `platformio.ini` (`cppcheck`, `clangtidy`, `pvs-studio`) and `.clang-tidy`.
+- Prefer small, surgical changes in `src/main.cpp` and `lib/Mpx/*`; avoid broad refactors across vendored `components/` unless fixing a dependency directly.
