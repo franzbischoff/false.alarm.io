@@ -1,7 +1,7 @@
 # false.alarm.io — Copilot Memory
 
 ## Última atualização
-- Data: 2026-03-02
+- Data: 2026-03-09
 
 ## Contexto atual
 - Projeto em PlatformIO com `framework = espidf` no ambiente principal `esp32idf` (ESP-IDF 5.5.3).
@@ -72,20 +72,36 @@ Salvo para quando performance se tornar crítica:
 ## Próximo Passo Acordado
 - Aplicar posteriormente implementação mínima focada em: release build, redução de logging, instrumentação objetiva.
 
-## Teste de Robustez do Mpx (2026-03-02)
-✅ **COMPLETO** - Framework de testes extensivo implementado na plataforma nativa
+## Teste de Robustez do Mpx (Atualizado 2026-03-09)
+✅ **COMPLETO** - Framework de testes atualizado e validado com nova versão da biblioteca
 
-### Status: 10/10 testes core passando ✅
+### Status: 20/20 testes passando ✅
 - **Ambiente**: Native (x86-64 desktop), compilado com Unity framework
-- **Tempo total**: 1.24 segundos
-- **Arquivos criados**:
-  - `test/test_mpx_robustness.cpp`: 19 testes de robustez
+- **Tempo total**: ~26.55 segundos
+- **Arquivos de teste**:
+  - `test/test_mpx.cpp`: 3 testes funcionais básicos
+  - `test/test_mpx_robustness.cpp`: 15 testes de robustez e invariantes
+  - `test/test_mpx_golden.cpp`: 2 testes de regressão com golden reference (NOVO)
   - `test/TEST_STRATEGY.md`: Documentação de validação
 
-### Testes Core Passando (10/10)
+### Mudanças na Biblioteca Mpx (2026-03-09)
+1. **prune_buffer()**: Alterado de random walk para padrão senoidal determinístico
+   - Antes: `data_buffer_[0] = 0.001F` + random walk
+   - Agora: `data_buffer_[i] = sinf(2*pi*i/100)` para resultados reproduzíveis
+   - **Impacto nos testes**: `test_mpx_prune_buffer_invariants` atualizado para esperar `data[0] = 0.0F`
+
+2. **floss_iac_()**: Implementada distribuição analítica de Kumaraswamy
+   - Substituiu simulação Monte Carlo por fórmula analítica determinística
+   - Parâmetros: a=1.939274, b=1.698150, normalização=4.035477
+   - **Benefício**: Resultados consistentes sem aleatoriedade
+
+### Testes Core Passando (20/20) ✅
+**Testes Funcionais Básicos (test_mpx.cpp) - 3 testes:**
 1. `test_mpx_constructor_initial_state` ✅
-2. `test_mpx_prune_buffer_invariants` ✅
+2. `test_mpx_prune_buffer_invariants` ✅ (atualizado hoje)
 3. `test_mpx_compute_and_floss_produce_valid_output` ✅
+
+**Testes de Robustez (test_mpx_robustness.cpp) - 15 testes:**
 4. `test_movmean_returns_finite_values` ✅ (Numerical Stability)
 5. `test_movsig_returns_valid_values` ✅ (Numerical Stability)
 6. `test_differential_arrays_are_finite` ✅ (Numerical Stability)
@@ -93,13 +109,87 @@ Salvo para quando performance se tornar crítica:
 8. `test_mp_indexes_valid_or_empty` ✅ (Matrix Profile Invariants)
 9. `test_floss_returns_finite_values` ✅ (FLOSS Output)
 10. `test_floss_endpoints_preserve_value_one` ✅ (FLOSS Output)
+11. `test_minimal_buffer_size` ✅ (Edge Cases)
+12. `test_large_exclusion_zone` ✅ (Edge Cases - ativado hoje)
+13. `test_time_constraint_accepted` ✅ (Edge Cases - ativado hoje)
+14. `test_constant_signal_no_crash` ✅ (Data Pattern Robustness)
+15. `test_mixed_pattern_signal` ✅ (Data Pattern Robustness)
+16. `test_noise_signal_stability` ✅ (Data Pattern Robustness - ativado hoje)
+17. `test_sequential_compute_does_not_crash` ✅ (Sequential Processing - ativado hoje)
+18. `test_floss_after_sequential_compute` ✅ (Sequential Processing - ativado hoje)
 
-### Testes Desabilitados (Segfault Risk)
-- `test_minimal_buffer_size` - Mpx não suporta buffers tiny (<= 4 samples)
-- Remainder desabilitados
+**Testes de Regressão Golden Reference (test_mpx_golden.cpp) - 2 testes (NOVO):**
+19. `test_golden_reference_metadata` ✅ (Golden Reference - criado hoje)
+20. `test_golden_reference_sample_validation` ✅ (Golden Reference - criado hoje)
+
+### Golden Reference Testing (2026-03-09) ✅
+**Implementação Completa**: Testes de regressão contra golden reference CSV
+- **Arquivo**: `test/golden_reference_nodelete.csv` (43.334 linhas, 5000 buffer + 4791 profile)
+- **Parâmetros**: window_size=210, buffer_size=5000, chunk_size=500, 54 iterações
+- **Método**: Processa 27.000 amostras de `test_data.csv` e compara com golden reference
+- **Validação**:
+  - Metadata exato (buffer_used, profile_len, movsum, mov2sum)
+  - Amostragem de 434 valores de todos os buffers (100% match)
+- **Tolerância**: 1e-5 (0.001%) para valores float
+- **Utilidade**: Detecta regressões e mudanças não intencionais na biblioteca
+
+### Comparação com other_tests (2026-03-09)
+- **Análise realizada**: Comparação completa entre `other_tests/` e `test/`
+- **Resultado Robustez**: Todos os testes já implementados em Unity
+- **Resultado Golden**: Testes golden transportados com sucesso de `other_tests/test_mpx_golden.cpp`
+- **Diferença**: 5 testes robustez estavam desabilitados + 2 testes golden adicionados
+- **Conclusão**: Cobertura completa — todos os testes de `other_tests` portados para Unity ✅
+
+### Dataset de Teste Atualizado
+- **Arquivo**: `test/test_data.csv` agora contém dataset mais robusto (1601 samples de ECG)
+- Características: Maior variabilidade e estrutura temporal para validação aprimorada
+- Uso nos testes:
+  - Testes sintéticos: `TestSignalGenerator` para padrões controlados
+  - Testes golden: `test_data.csv` completo (30.000 amostras processadas)
 
 ### Próximas Ações
 1. Integração com Rcpp como Golden Standard
 2. Ativar testes desabilitados com boundary checks robustos
 3. Validação em esp32idf após sucesso em native
+
+## Sessão Atual — ESP32 SD + Golden (2026-03-09)
+✅ **COMPLETO**
+
+### Resultado final dos testes
+- `platformio test -e native`: **20/20 PASS** (~25s)
+- `platformio test -e esp32_test`: **20/20 PASS** (~1m44s)
+
+### Ajustes implementados nesta sessão
+1. **Novo environment de testes embarcados**
+  - Adicionado `env:esp32_test` em `platformio.ini` para `sparkfun_esp32_iot_redboard`
+  - Flag principal: `-DUSE_SD_CARD=1`
+
+2. **Leitura de CSV no ESP32 via SD card**
+  - Testes golden adaptados para usar paths SD (`/sdcard/...`)
+  - Fallback para nomes curtos FATFS 8.3:
+    - `TEST_D~1.CSV`
+    - `GOLDEN~1.CSV`
+
+3. **Montagem SD corrigida para SDSPI**
+  - Substituição de abordagem por `esp_vfs_fat_sdspi_mount`
+  - Pinos default configuráveis por build flags (`SD_SPI_*`)
+
+4. **Estabilidade em hardware (loop/reset resolvido)**
+  - Causa: stack canary na task principal durante testes golden
+  - Correção: execução dos testes em task dedicada com stack maior (`unity_test`, 32768)
+  - `Mpx` dos testes golden movido para heap (`new (std::nothrow)`)
+
+5. **Performance dos testes golden melhorada**
+  - `test_golden_reference_sample_validation` otimizado para leitura do golden em **passagem única (streaming)**
+  - Eliminada releitura repetida de arquivo por linha amostrada
+
+6. **Comportamento validado dos testes golden**
+  - Metadata: processa **27.000 amostras** (`54 x 500`)
+  - Sample validation: amostra a cada 100 linhas (~434 amostras), comparando buffers suportados
+  - Tolerância igual em `native` e `esp32_test`: `1e-5` (com regra relativa para floats)
+
+7. **Documentação atualizada**
+  - `test/README_ESP32_TESTING.md` atualizado para estado real (montagem automática, SDSPI, fallback 8.3, tempos e fluxo atual)
+  - `test/TEST_STRATEGY.md` atualizado com baseline atual do golden e estratégia de validação vigente
+  - Comentários de cabeçalho em `test/test_mpx_golden.cpp` alinhados com comportamento atual
 

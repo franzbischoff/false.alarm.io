@@ -7,10 +7,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
-#include <esp_random.h>
 #include <esp_log.h>
-#define RAND() (int32_t)(esp_random())
 #define LOG_DEBUG(tag, format, ...) ESP_LOGD(tag, format, ##__VA_ARGS__)
 #else
 // Generic desktop/native build
@@ -19,17 +18,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
-#define RAND() rand()
 #ifdef NDEBUG
-#define LOG_DEBUG(tag, format, ...) (void)0  // No-op in release mode
+#define LOG_DEBUG(tag, format, ...) (void)0 // No-op in release mode
 #else
 #define LOG_DEBUG(tag, format, ...) std::printf("[%s] " format "\n", tag, ##__VA_ARGS__)
 #endif
-#endif
-
-#if !defined(NULL)
-#define NULL 0
 #endif
 
 // uint16_t = 0 to 65535
@@ -38,30 +33,46 @@
 namespace MatrixProfile {
 class Mpx {
 public:
-  // cppcheck-suppress noExplicitConstructor
+  // ppcheck-suppress noExplicitConstructor
+  // Initialize MPX state and pre-allocate fixed buffers for streaming processing.
   Mpx(uint16_t window_size, float ez = 0.5F, uint16_t time_constraint = 0U, uint16_t buffer_size = 5000U);
   ~Mpx(); // destructor
 
-  uint16_t compute(const float *data, uint16_t size);
+  // Ingest new samples and update matrix profile state; returns remaining buffer capacity.
+  [[nodiscard]] uint16_t compute(const float *data, uint16_t size);
+  // Reinitialize internal signal buffer and derived vectors.
   void prune_buffer();
+  // Compute FLOSS normalized arc counts from the current matrix profile indexes.
   void floss();
 
-  // Getters
-  float *get_data_buffer() { return data_buffer_; };
-  float *get_matrix() { return vmatrix_profile_; };
-  int16_t *get_indexes() { return vprofile_index_; };
-  float *get_floss() { return floss_; };
-  float *get_iac() { return iac_; };
-  float *get_vmmu() { return vmmu_; };
-  float *get_vsig() { return vsig_; };
-  float *get_ddf() { return vddf_; };
-  float *get_ddg() { return vddg_; };
-  float *get_vww() { return vww_; };
-  uint16_t get_buffer_used() { return buffer_used_; };
-  int16_t get_buffer_start() { return buffer_start_; };
-  uint16_t get_profile_len() { return profile_len_; };
-  float get_last_movsum() { return last_accum_ + last_resid_; };
-  float get_last_mov2sum() { return last_accum2_ + last_resid2_; };
+  // Raw views over internal buffers (mutable and const overloads).
+  [[nodiscard]] float *get_data_buffer() noexcept { return data_buffer_.get(); };
+  [[nodiscard]] const float *get_data_buffer() const noexcept { return data_buffer_.get(); };
+  [[nodiscard]] float *get_matrix() noexcept { return vmatrix_profile_.get(); };
+  [[nodiscard]] const float *get_matrix() const noexcept { return vmatrix_profile_.get(); };
+  [[nodiscard]] int16_t *get_indexes() noexcept { return vprofile_index_.get(); };
+  [[nodiscard]] const int16_t *get_indexes() const noexcept { return vprofile_index_.get(); };
+  [[nodiscard]] float *get_floss() noexcept { return floss_.get(); };
+  [[nodiscard]] const float *get_floss() const noexcept { return floss_.get(); };
+  [[nodiscard]] float *get_iac() noexcept { return iac_.get(); };
+  [[nodiscard]] const float *get_iac() const noexcept { return iac_.get(); };
+  [[nodiscard]] float *get_vmmu() noexcept { return vmmu_.get(); };
+  [[nodiscard]] const float *get_vmmu() const noexcept { return vmmu_.get(); };
+  [[nodiscard]] float *get_vsig() noexcept { return vsig_.get(); };
+  [[nodiscard]] const float *get_vsig() const noexcept { return vsig_.get(); };
+  [[nodiscard]] float *get_ddf() noexcept { return vddf_.get(); };
+  [[nodiscard]] const float *get_ddf() const noexcept { return vddf_.get(); };
+  [[nodiscard]] float *get_ddg() noexcept { return vddg_.get(); };
+  [[nodiscard]] const float *get_ddg() const noexcept { return vddg_.get(); };
+  [[nodiscard]] float *get_vww() noexcept { return vww_.get(); };
+  [[nodiscard]] const float *get_vww() const noexcept { return vww_.get(); };
+
+  // Lightweight scalar state accessors.
+  [[nodiscard]] uint16_t get_buffer_used() const noexcept { return buffer_used_; };
+  [[nodiscard]] int16_t get_buffer_start() const noexcept { return buffer_start_; };
+  [[nodiscard]] uint16_t get_profile_len() const noexcept { return profile_len_; };
+  [[nodiscard]] float get_last_movsum() const noexcept { return last_accum_ + last_resid_; };
+  [[nodiscard]] float get_last_mov2sum() const noexcept { return last_accum2_ + last_resid2_; };
 
 private:
   bool new_data_(const float *data, uint16_t size);
@@ -82,7 +93,7 @@ private:
   int16_t buffer_start_ = 0;
 
   uint16_t profile_len_;
-  uint16_t range_; // profile lenght - 1
+  uint16_t range_; // profile length - 1
 
   uint16_t exclusion_zone_;
 
@@ -92,16 +103,16 @@ private:
   float last_resid2_ = 0.0F;
 
   // arrays
-  float *data_buffer_ = nullptr;
-  float *vmatrix_profile_ = nullptr;
-  int16_t *vprofile_index_ = nullptr;
-  float *floss_ = nullptr;
-  float *iac_ = nullptr;
-  float *vmmu_ = nullptr;
-  float *vsig_ = nullptr;
-  float *vddf_ = nullptr;
-  float *vddg_ = nullptr;
-  float *vww_ = nullptr;
+  std::unique_ptr<float[]> data_buffer_;
+  std::unique_ptr<float[]> vmatrix_profile_;
+  std::unique_ptr<int16_t[]> vprofile_index_;
+  std::unique_ptr<float[]> floss_;
+  std::unique_ptr<float[]> iac_;
+  std::unique_ptr<float[]> vmmu_;
+  std::unique_ptr<float[]> vsig_;
+  std::unique_ptr<float[]> vddf_;
+  std::unique_ptr<float[]> vddg_;
+  std::unique_ptr<float[]> vww_;
 };
 
 } // namespace MatrixProfile

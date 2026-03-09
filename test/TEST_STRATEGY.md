@@ -6,7 +6,6 @@
 
 ### 1. MOVING AVERAGE (movmean_)
 - **C++ Implementation:** Uses Kahan summation for numerical stability
-- **Rcpp Reference:** muinvn_rcpp() computes mean vector
 - **Validation:**
   - Compare output within numerical tolerance (1e-5)
   - Test with large values + small perturbations
@@ -14,39 +13,33 @@
 
 ### 2. MOVING SIGMA (movsig_)
 - **C++ Implementation:** Computes 1/sqrt(variance) with Kahan summation
-- **Rcpp Reference:** muinvn_rcpp() computes sigma (variance normalization)
 - **Validation:**
   - Check sigma > 0 for normal variance
   - Verify sigma = -1 for constant/low-variance windows
-  - Compare with naive reference implementation
+  - Compare with reference values
 
 ### 3. INCREMENTAL UPDATE (muinvn_)
 - **C++ Implementation:** Maintains running statistics across buffer shifts
-- **Rcpp Reference:** mpxi_rcpp() updates mmu/ssig arrays
 - **Validation:**
   - Overlap regions should match after shift
   - Accumulator/residual state should be consistent
 
 ### 4. MATRIX PROFILE COMPUTATION
 - **C++ Implementation:** compute() -> mp_next_() with streaming
-- **Rcpp Reference:** mpxiright_rcpp() / mpxileft_rcpp()
 - **Validation:**
   - Profile indices should stay within bounds
   - Correlation values in [-1, 1]
   - No NaN/Inf values
 
 ### 5. FLOSS COMPUTATION
-- **C++ Implementation:** floss() with random Monte Carlo
-- **Rcpp Reference:** floss() [if available in wrapper]
+- **C++ Implementation:** floss() com IAC analitico (Kumaraswamy), sem dependencia de Monte Carlo
 - **Validation:**
   - Output is always finite
   - Endpoints = 1.0 (no other pattern to compare)
 
 ## NUMERICAL PRECISION STRATEGY
 
-The implementations differ in platform/library:
-- **C++ (ESP32):** Single-precision float (32-bit), esp_log, FreeRTOS
-- **Rcpp (R):** Double-precision (64-bit), optimized linear algebra
+Numerical validation tolerances for comparing implementation outputs:
 
 ### TOLERANCE LEVELS
 
@@ -73,8 +66,16 @@ For each test case:
 - Feed signal to C++ compute()
 - Extract outputs: mmu, sig, ddf, ddg, matrix_profile, floss
 
+### 2.1 GOLDEN REGRESSION (estado atual)
+- `test_golden_reference_metadata`:
+  - Processa exatamente `54 x 500 = 27.000` amostras de `test_data.csv`
+  - Compara os 5 metadados do golden (`buffer_used`, `buffer_start`, `profile_len`, `last_movsum`, `last_mov2sum`)
+- `test_golden_reference_sample_validation`:
+  - Le o `golden_reference_nodelete.csv` em passagem unica (streaming)
+  - Valida amostragem (`sample_interval=100`) cobrindo todos os tipos de buffer suportados
+
 ### 3. VALIDATE AGAINST REFERENCE
-- Compare with naive manual calculation
+- Compare against golden reference data (buffered in CSV files)
 - Check bounds, ranges, special values
 - Verify numerical stability with Kahan checks
 
@@ -82,27 +83,6 @@ For each test case:
 - Log any tolerances needed
 - Note platform-specific precision issues
 - Flag potential bugs or divergences
-
-## HOW TO ADD Rcpp VALIDATION
-
-Currently, C++ tests use NAIVE REFERENCE implementations.
-To integrate Rcpp golden standard:
-
-### 1. Create Rcpp harness (rcpp/validate.cpp):
-- Load Rcpp functions
-- Export function to compute reference results given input signal
-
-### 2. Add test helper (test/test_helper_rcpp.cpp):
-- Link to Rcpp harness
-- Call reference functions, return NumericVector to C++
-
-### 3. Modify test macros:
-- TEST_AGAINST_RCPP(expected_rcpp, actual_cpp, tolerance)
-- Automatically log discrepancies
-
-### 4. Run comparison tests:
-- platformio test -e esp32idf
-- Review any tolerance misses
 
 ## CRITICAL BUGS TO CATCH
 
@@ -171,6 +151,17 @@ Recommended test inputs (with pre-computed expected outputs):
 - **Length:** 32 samples
 - **Window:** 8 samples
 - **Expected:** Random profile values, low confidence
+
+## CURRENT GOLDEN BASELINE (Project)
+
+- Golden file em uso: `test/golden_reference_nodelete.csv`
+- Parametros que definem o baseline atual:
+  - `window_size = 210`
+  - `buffer_size = 5000`
+  - `chunk_size = 500`
+  - `num_iterations = 54`
+- Resultado de processamento esperado para metadata:
+  - `27.000` amostras efetivamente consumidas do `test_data.csv`
 
 ## LOG_DEBUG MACRO VALIDATION (Native Platform)
 

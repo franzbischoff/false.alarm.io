@@ -87,7 +87,7 @@ void test_mpx_constructor_initial_state(void) {
  *          statistical buffers and maintains consistency
  *
  * WHAT HAPPENS IN prune_buffer():
- *   1. Fills data_buffer_ with random walk data (starting from 0.001)
+ *   1. Fills data_buffer_ with sinusoidal pattern (sin(2*pi*i/100)) for reproducible results
  *   2. Calls muinvn_(0) to compute moving averages (vmmu_)
  *   3. Calls muinvn_(0) to compute moving variance (vsig_)
  *   4. Calls ddf_(0) to compute first differences
@@ -113,8 +113,8 @@ void test_mpx_prune_buffer_invariants(void) {
   float *ddg = mpx.get_ddg();
 
   // CHECK 1: Data buffer sanity
-  // First element should be 0.001 (as set in prune_buffer)
-  TEST_ASSERT_FLOAT_WITHIN(0.0001F, 0.001F, data[0]);
+  // First element should be 0.0 (sinusoidal pattern starts at sin(0) = 0)
+  TEST_ASSERT_FLOAT_WITHIN(0.0001F, 0.0F, data[0]);
 
   // CHECK 2: Buffer state consistency
   TEST_ASSERT_EQUAL_UINT16(buffer_size, mpx.get_buffer_used());
