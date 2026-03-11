@@ -120,6 +120,10 @@ int main() {
 #define SERIAL_PLOT_EVERY_N 1
 #endif
 
+#ifndef PROCESS_TASK_COOPERATIVE_DELAY_MS
+#define PROCESS_TASK_COOPERATIVE_DELAY_MS 0
+#endif
+
 namespace {
 static const char *TAG = "main";
 
@@ -250,6 +254,11 @@ void task_process_signal(void *pv_parameters) {
                     floss_value);
       (void)ctx->sd_service->append_line("/sdcard/floss_debug.log", log_line);
     }
+#endif
+
+#if PROCESS_TASK_COOPERATIVE_DELAY_MS > 0
+    // Give IDLE task time to run when processing+UART output keeps this loop hot.
+    vTaskDelay(pdMS_TO_TICKS(PROCESS_TASK_COOPERATIVE_DELAY_MS));
 #endif
   }
 }

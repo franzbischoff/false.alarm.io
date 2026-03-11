@@ -1,7 +1,46 @@
 # false.alarm.io — Copilot Memory
 
 ## Última atualização
-- Data: 2026-03-09
+- Data: 2026-03-11
+
+## Sessão Atual — Runtime modular + perfis de build (2026-03-11)
+✅ **COMPLETO**
+
+### Arquitetura da aplicação
+- `src/main.cpp` refeito para pipeline produtor/consumidor com FreeRTOS:
+  - task de aquisição com período fixo (`vTaskDelayUntil`) para preservar taxa de amostragem.
+  - task de processamento em lote para `Mpx::compute()` + `floss()` com threshold de alerta.
+  - queue intermediária com `sample + timestamp_us`.
+  - task de monitor opcional (contadores, queue, stack high-water, heap).
+- Modo opcional para demonstração em Serial Plotter (`sample,floss`) sem alterar o fluxo de produção.
+
+### Modularização de fontes de sinal
+- Fonte de sinal separada por backend (compilação condicional por `SIGNAL_SOURCE_KIND`):
+  - `src/signal_source_sd_csv.cpp`
+  - `src/signal_source_analog.cpp`
+  - `src/signal_source_i2c.cpp`
+- Removido arquivo monolítico antigo `src/signal_source.cpp`.
+
+### Perfis de ambiente no PlatformIO
+- `env:esp32_prod`: foco em produção, sem telemetria de debug/plot.
+- `env:esp32_demo`: foco em demonstração (debug + serial plot) e checks estáticos habilitados.
+- `build_src_flags` documentados por comentários no `platformio.ini`.
+
+### Configuração ESP-IDF (defaults)
+- Novo baseline enxuto: `sdkconfig.defaults`.
+- Novo perfil dedicado de produção: `sdkconfig.defaults.prod`.
+- `esp32_prod` usa `sdkconfig.defaults.prod` e `build_type = release`.
+- `esp32_demo` e `esp32_test` usam `sdkconfig.defaults`.
+
+### Dependências removidas
+- Pipeline não usa mais LittleFS (entrada/saída via SD/FATFS).
+- `components/esp_littlefs` removido do workspace.
+- `CMakeLists.txt` atualizado com `EXCLUDE_COMPONENTS esp_littlefs`.
+
+### Resultado de tamanho de firmware (produção)
+- Antes da otimização de perfil: **309973 bytes**.
+- Após `sdkconfig.defaults.prod` + release/offline: **281755 bytes**.
+- Redução: **28218 bytes (~9.1%)**.
 
 ## Contexto atual
 - Projeto em PlatformIO com `framework = espidf` no ambiente principal `esp32idf` (ESP-IDF 5.5.3).

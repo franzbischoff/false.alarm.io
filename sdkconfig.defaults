@@ -1,0 +1,56 @@
+# false.alarm.io - lean sdkconfig defaults (ESP-IDF)
+#
+# Rationale:
+# - Keep only baseline knobs required by the current runtime architecture.
+# - Source of data is SD card (SDSPI/FATFS), not LittleFS.
+# - Minimize optional subsystems to reduce build/link overhead.
+# - Preserve stable timing behavior for producer/consumer FreeRTOS tasks.
+
+# Target / toolchain
+CONFIG_IDF_TARGET="esp32"
+CONFIG_IDF_TARGET_ESP32=y
+
+# Partition table used by this project
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_PARTITION_TABLE_MD5=y
+
+# Build profile: size-optimized, assertions enabled for safer debug cycles
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL=2
+
+# Keep C++ runtime lighter (exceptions/RTTI disabled)
+# CONFIG_COMPILER_CXX_EXCEPTIONS is not set
+# CONFIG_COMPILER_CXX_RTTI is not set
+
+# FreeRTOS tick at 1kHz for precise sampling periods (e.g. 250Hz = 4ms)
+CONFIG_FREERTOS_HZ=1000
+
+# Logging: low default level to reduce runtime overhead in production
+CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
+CONFIG_LOG_DEFAULT_LEVEL=1
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
+CONFIG_LOG_MAXIMUM_LEVEL=5
+
+# High-resolution timer available for per-sample timestamps
+CONFIG_ESP_TIME_FUNCS_USE_ESP_TIMER=y
+CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER=y
+
+# Security/network features not used in current offline data pipeline
+# CONFIG_BT_ENABLED is not set
+CONFIG_MBEDTLS_TLS_DISABLED=y
+
+# Keep FATFS available (required by SD card VFS mount path)
+CONFIG_FATFS_CODEPAGE_437=y
+CONFIG_FATFS_CODEPAGE=437
+CONFIG_FATFS_PER_FILE_CACHE=y
+
+# Keep watchdogs active for robustness in long-running tasks
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_TASK_WDT=y
+
+# Boot behavior suitable for iterative development
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
