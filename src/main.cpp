@@ -1,7 +1,3 @@
-// This is a personal academic project. Dear PVS-Studio, please check it.
-
-// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
-
 #if !defined(ESP_PLATFORM)
 
 #include <cstdio>
@@ -13,449 +9,355 @@ int main() {
 
 #else
 
-#include <esp_log.h>
-#include <esp_system.h>
-#include <esp_chip_info.h>
-#include <esp_littlefs.h>
-#include <cmath>
+#include <array>
+#include <cstdio>
+#include <memory>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
-#include <freertos/ringbuf.h>
+#include "Mpx.hpp"
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "sd_card_service.hpp"
+#include "signal_source.hpp"
 
-#include <Mpx.hpp>
-
-// #include <SparkFun_Bio_Sensor_Hub_Library.hpp>
-
-//>> Matrix Profile settings are defined on compile time
-#ifndef FILE_DATA
-#define RESPIN 4
-#define MFIOPIN 2
-#define MYSDA 21
-#define MYSCL 22
-
-#ifndef SHORT_FILTER
-#define SHORT_FILTER (SAMPLING_HZ / 10)
-#endif
-#ifndef WANDER_FILTER
-#define WANDER_FILTER (SAMPLING_HZ / 2)
-#endif
-#endif
-
-#define WIN_SIZE WINDOW_SIZE
-#define S_SAMPLES SENSOR_SAMPLES
-#define S_WIDTH SENSOR_WIDTH
-#define SAMPLING_HZ SAMPLING_RATE_HZ
-#define HIST_SIZE (HISTORY_SIZE_S * SAMPLING_HZ)
-#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
-#define BUFFER_SIZE (WIN_SIZE)              // must be at least 2x the window_size
-#define RING_BUFFER_SIZE (BUFFER_SIZE + 20) // queue must have a little more room
-
-// ESP_PLATFORM
-
-//>> multitask configurations
-void task_compute(void *pv_parameters);
-void task_read_signal(void *pv_parameters);
-enum CORES { CORE_0 = 0, CORE_1 = 1 };
-
-//>> log tag
-static const char TAG[] = "main";
 #ifndef MAIN_LOG_LEVEL
 #define MAIN_LOG_LEVEL ESP_LOG_INFO
 #endif
 
-//>> global variables
-static bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-#if defined(FILE_DATA)
-static FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+#ifndef SAMPLING_RATE_HZ
+#define SAMPLING_RATE_HZ 250
 #endif
 
-/// @brief Task to compute the matrix profile
-/// @param pv_parameters pointer to the task parameters
-void task_compute(void *pv_parameters) // This is a task.
-{
-  (void)pv_parameters;
+#ifndef WINDOW_SIZE
+#define WINDOW_SIZE 100
+#endif
 
-  const uint16_t floss_landmark = FLOSS_LANDMARK;
-  float buffer[BUFFER_SIZE];
-  uint16_t recv_count;
-  int16_t delay_adjust = 100;
+#ifndef HISTORY_SIZE_S
+#define HISTORY_SIZE_S 20
+#endif
 
-  for (uint16_t i = 0; i < BUFFER_SIZE; i++) { // NOLINT(modernize-loop-convert)
-    buffer[i] = 0.0F;
+#ifndef FLOSS_ALERT_THRESHOLD
+#define FLOSS_ALERT_THRESHOLD 0.45F
+#endif
+
+#ifndef SIGNAL_SOURCE_KIND
+#define SIGNAL_SOURCE_KIND 0
+#endif
+
+#ifndef APP_DEBUG_OUTPUT
+#define APP_DEBUG_OUTPUT 1
+#endif
+
+#ifndef DEBUG_LOG_EVERY_N_SAMPLES
+#define DEBUG_LOG_EVERY_N_SAMPLES 25
+#endif
+
+#ifndef LOG_TO_SD_ENABLED
+#define LOG_TO_SD_ENABLED 0
+#endif
+
+#ifndef RING_BUFFER_CAPACITY_SAMPLES
+#define RING_BUFFER_CAPACITY_SAMPLES 500
+#endif
+
+#ifndef MPX_BATCH_SIZE
+#define MPX_BATCH_SIZE 16
+#endif
+
+#ifndef TASK_ACQ_CORE
+#define TASK_ACQ_CORE 0
+#endif
+
+#ifndef TASK_PROC_CORE
+#define TASK_PROC_CORE 1
+#endif
+
+#ifndef TASK_MON_CORE
+#define TASK_MON_CORE 1
+#endif
+
+#ifndef TASK_ACQ_PRIORITY
+#define TASK_ACQ_PRIORITY (tskIDLE_PRIORITY + 4)
+#endif
+
+#ifndef TASK_PROC_PRIORITY
+#define TASK_PROC_PRIORITY (tskIDLE_PRIORITY + 3)
+#endif
+
+#ifndef TASK_MON_PRIORITY
+#define TASK_MON_PRIORITY (tskIDLE_PRIORITY + 1)
+#endif
+
+#ifndef TASK_ACQ_STACK_BYTES
+#define TASK_ACQ_STACK_BYTES 8192
+#endif
+
+#ifndef TASK_PROC_STACK_BYTES
+#define TASK_PROC_STACK_BYTES 16384
+#endif
+
+#ifndef TASK_MON_STACK_BYTES
+#define TASK_MON_STACK_BYTES 6144
+#endif
+
+#ifndef ENABLE_MONITOR_TASK
+#define ENABLE_MONITOR_TASK 1
+#endif
+
+#ifndef DEBUG_MONITOR_PERIOD_MS
+#define DEBUG_MONITOR_PERIOD_MS 2000
+#endif
+
+#ifndef SERIAL_PLOT_MODE
+#define SERIAL_PLOT_MODE 0
+#endif
+
+#ifndef SERIAL_PLOT_EVERY_N
+#define SERIAL_PLOT_EVERY_N 1
+#endif
+
+namespace {
+static const char *TAG = "main";
+
+constexpr TickType_t kLoopTick = pdMS_TO_TICKS(1000U / SAMPLING_RATE_HZ);
+constexpr uint16_t kWindowSize = WINDOW_SIZE;
+constexpr uint16_t kHistorySamples = static_cast<uint16_t>(SAMPLING_RATE_HZ * HISTORY_SIZE_S);
+
+struct SignalPacket {
+  float sample;
+  uint64_t timestamp_us;
+};
+
+struct RuntimeContext {
+  QueueHandle_t queue;
+  ISignalSource *source;
+#if LOG_TO_SD_ENABLED
+  SdCardService *sd_service;
+#endif
+};
+
+TaskHandle_t g_task_acq = nullptr;
+TaskHandle_t g_task_proc = nullptr;
+TaskHandle_t g_task_mon = nullptr;
+
+volatile uint32_t g_dropped_samples = 0U;
+volatile uint32_t g_produced_samples = 0U;
+volatile uint32_t g_processed_samples = 0U;
+
+uint16_t compute_floss_probe_index(uint16_t profile_len) {
+  uint16_t const probe_offset = static_cast<uint16_t>(2U * kWindowSize);
+  if (profile_len > probe_offset) {
+    return static_cast<uint16_t>(profile_len - probe_offset);
   }
+  return 0U;
+}
 
-  MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE);
+void task_acquire_signal(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  TickType_t last_wake_time = xTaskGetTickCount();
+
+  for (;;) {
+    SignalPacket packet = {0.0F, 0U};
+
+    esp_err_t const read_ret = ctx->source->read_sample(packet.sample);
+    if (read_ret == ESP_OK) {
+      packet.timestamp_us = static_cast<uint64_t>(esp_timer_get_time());
+      if (xQueueSend(ctx->queue, &packet, 0) != pdTRUE) {
+        g_dropped_samples++;
+      } else {
+        g_produced_samples++;
+      }
+    } else {
+      ESP_LOGW(TAG, "Acquisition read failed (%s)", esp_err_to_name(read_ret));
+    }
+
+    vTaskDelayUntil(&last_wake_time, kLoopTick);
+  }
+}
+
+void task_process_signal(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  MatrixProfile::Mpx mpx(kWindowSize, 0.5F, 0U, kHistorySamples);
   mpx.prune_buffer();
 
-  for (;;) // -H776 A Task shall never return or exit.
-  {
+  std::array<float, MPX_BATCH_SIZE> samples{};
+  SignalPacket packet = {0.0F, 0U};
 
-    if (buffer_init) { // wait for buffer to be initialized
-      recv_count = 0;
-
-      for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-
-        size_t item_size; // size in bytes (usually 4 bytes)
-        float *data = (float *)xRingbufferReceive(ring_buf, &item_size, 0);
-
-        if (item_size > 4) {
-          ESP_LOGD(TAG, "Item_size: %u", item_size);
-        }
-
-        if (data != nullptr) {
-          buffer[i] = *data; // read data from the ring buffer
-          recv_count = i + 1;
-          vRingbufferReturnItem(ring_buf, (void *)data);
-        } else {
-          break; // no more data in the ring buffer
-        }
-      }
-
-      if (recv_count > 0) {
-        // ESP_LOGD(TAG, "Compute %u\n", uxTaskGetStackHighWaterMark(NULL));
-
-        ESP_LOGI(TAG, "recv_count: %u", recv_count);
-
-        mpx.compute(buffer, recv_count); /////////////////
-        mpx.floss();
-
-        // const uint16_t profile_len = mpx.get_profile_len();
-        (void)mpx.get_floss();
-        float *matrix = mpx.get_matrix();
-
-        if (esp_log_level_get(TAG) >= ESP_LOG_DEBUG) {
-          char log_buf[64];
-          for (uint16_t i = 0; i < 1; i++) {
-            // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
-            //                matrix[floss_landmark + i]);
-            sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]); // NOLINT(cert-err33-c)
-            esp_rom_printf("%s\n", log_buf);                                      // indexes[floss_landmark + i]);
-          }
-        }
-        // ESP_LOGD(TAG, "[Consumer] %d\n", recv_count); // handle about 400 samples per second
-        if (recv_count > 30) {
-          delay_adjust -= 5;
-          if (delay_adjust <= 0) {
-            delay_adjust = 1;
-          }
-        } else {
-          if (recv_count < 10) {
-            delay_adjust += 5;
-          }
-        }
-      }
-    } else {
-      // ESP_LOGD(TAG, "-1, -1\n");
-      vTaskDelay((portTICK_PERIOD_MS * 2)); // for stability
-    }
-
-    vTaskDelay((portTICK_PERIOD_MS * delay_adjust)); // for stability
-  }
-}
-
-/// @brief Task to read the signal from the sensor
-/// @param pv_parameters pointer to the task parameters
-void task_read_signal(void *pv_parameters) // This is a task.
-{
-  (void)pv_parameters;
-
-  TickType_t last_wake_time;
-
-  uint16_t initial_counter = 0;
-  float ir_res;
-  const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
-
-#ifndef FILE_DATA
-  // Reset pin, MFIO pin
-  const uint16_t res_pin = RESPIN;
-  const uint16_t mfio_pin = MFIOPIN;
-  // Possible widths: 69, 118, 215, 411us
-  const uint16_t width = S_WIDTH;
-  // Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
-  // Not every sample amount is possible with every width; check out our hookup
-  // guide for more information.
-  const uint16_t samples = S_SAMPLES;
-
-  // short period filter
-  const float s_window = SHORT_FILTER;
-  const float eps_f = 0.05F;
-  const float alpha = powf(eps_f, 1.0F / s_window);
-
-  // large (wander) period filter
-  const float l_window = WANDER_FILTER;
-  const float l_alpha = powf(eps_f, 1.0F / l_window);
-
-  // Takes address, reset pin, and MFIO pin.
-  // SparkFun_Bio_Sensor_Hub bio_hub(res_pin, mfio_pin);
-  // bioData body;
-
-  uint32_t ir_led;
-  bool sensor_started = false;
-
-  float ir_sum = 0.0F;
-  float ir_num = 0.0F;
-  float ir_sum2 = 0.0F;
-  float ir_num2 = 0.0F;
-
-  // Wire.begin();
-  // bio_hub.begin();
-
-  // bio_hub.configSensor();
-  // bio_hub.setPulseWidth(width);   // 18 bits resolution (0-262143)
-  // bio_hub.setSampleRate(samples); // 18 bits resolution (0-262143)
+#if APP_DEBUG_OUTPUT
+  uint32_t debug_counter = 0U;
+#endif
+#if SERIAL_PLOT_MODE
+  uint32_t serial_plot_counter = 0U;
 #endif
 
-  ESP_LOGD(TAG, "task_read_signal started");
-
-  vTaskDelay((portTICK_PERIOD_MS * 1000)); // Wait for sensor to stabilize
-
-  last_wake_time = xTaskGetTickCount();
-
-  for (;;) // -H776 A Task shall never return or exit.
-  {
-    vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
-
-#ifndef FILE_DATA
-    // body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
-    // ir_led = body.irLed;
-    ir_led = 0;
-
-    if (!sensor_started) {
-      if (ir_led == 0) {
-        sensor_started = true;
-        initial_counter = 0;
-
-        ESP_LOGD(TAG, "[Producer] Sensor started, now it can be used.\n");
-      } else {
-        initial_counter++;
-        if (initial_counter > 2500) {
-          ESP_LOGD(TAG, "[Producer] Sensor not properly started, rebooting...\n");
-          esp_restart();
-        }
-      }
+  for (;;) {
+    if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
+      continue;
     }
 
-    // 70744 // t 318384 > 363368 // 277,849/1,310,720 ;; 16,976/327,680
-    // getMaxAllocHeap: 69620
+    uint16_t recv_count = 0U;
+    samples[recv_count++] = packet.sample;
 
-    if (ir_led > 10000) {
-      // ESP_LOGD(TAG, "Read %u\n", uxTaskGetStackHighWaterMark(NULL)); // 176
-
-      ir_sum = ir_sum * alpha + (float)ir_led;
-      ir_num = ir_num * alpha + 1.0F;
-      ir_sum2 = ir_sum2 * l_alpha + (float)ir_led;
-      ir_num2 = ir_num2 * l_alpha + 1.0F;
-      ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
-      ir_res /= 20.0F;
-#else
-
-    ir_res = 0.0F;
-
-    if (file != nullptr) {
-
-      char line[20];
-
-      if (fgets(line, sizeof(line), file) == nullptr) {
-        ESP_LOGI(TAG, "End of file reached, rewind");
-        rewind(file);
-        // file = nullptr;
-        // All done, unmount partition and disable LittleFS
-
-        // ESP_LOGI(TAG, "LittleFS unmounted");
-
-      } else {
-        float v = std::stof(line);
-        ir_res = v;
+    while (recv_count < static_cast<uint16_t>(samples.size())) {
+      SignalPacket next_packet = {0.0F, 0U};
+      if (xQueueReceive(ctx->queue, &next_packet, 0) != pdTRUE) {
+        break;
       }
+      packet = next_packet;
+      samples[recv_count++] = next_packet.sample;
     }
 
+    (void)mpx.compute(samples.data(), recv_count);
+    mpx.floss();
+    g_processed_samples += recv_count;
+
+    uint16_t const profile_len = mpx.get_profile_len();
+    uint16_t const floss_probe_index = compute_floss_probe_index(profile_len);
+    float const floss_value = mpx.get_floss()[floss_probe_index];
+    float const latest_sample = samples[recv_count - 1U];
+
+    if (floss_value <= FLOSS_ALERT_THRESHOLD) {
+      ESP_LOGW(TAG, "ALERT: floss[%u]=%.5f <= %.5f (ts=%llu)", floss_probe_index, floss_value, FLOSS_ALERT_THRESHOLD,
+               static_cast<unsigned long long>(packet.timestamp_us));
+    }
+
+#if APP_DEBUG_OUTPUT
+    debug_counter += recv_count;
+    if (debug_counter >= DEBUG_LOG_EVERY_N_SAMPLES) {
+      debug_counter = 0U;
+      ESP_LOGI(TAG, "dbg: source=%s sample=%.5f floss[%u]=%.5f ts=%llu", ctx->source->name(), latest_sample,
+               floss_probe_index, floss_value, static_cast<unsigned long long>(packet.timestamp_us));
+    }
 #endif
 
-      if (ir_res > 50.0F || ir_res < -50.0F) {
-        continue;
-      }
+#if SERIAL_PLOT_MODE
+    serial_plot_counter += recv_count;
+    if (serial_plot_counter >= SERIAL_PLOT_EVERY_N) {
+      serial_plot_counter = 0U;
+      std::printf("%.6f,%.6f\n", latest_sample, floss_value);
+    }
+#endif
 
-      const UBaseType_t res = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
-
-      if (res == pdTRUE) {
-        if (!buffer_init) {
-          if (++initial_counter >= BUFFER_SIZE) {
-            buffer_init = true; // this is read by the receiver task
-            ESP_LOGD(TAG, "[Producer] DEBUG: Buffer started, starting to compute\n");
-          }
-        }
-      } else {
-        ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
-      }
-#ifndef FILE_DATA
-    } else {
-      // ESP_LOGD(TAG, "[Producer] IR: %d\n", body.irLed);
-      vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+#if LOG_TO_SD_ENABLED
+    if (ctx->sd_service->is_mounted()) {
+      char log_line[160] = {0};
+      std::snprintf(log_line, sizeof(log_line), "ts_us=%llu,sample=%.6f,floss[%u]=%.6f",
+                    static_cast<unsigned long long>(packet.timestamp_us), latest_sample, floss_probe_index,
+                    floss_value);
+      (void)ctx->sd_service->append_line("/sdcard/floss_debug.log", log_line);
     }
 #endif
   }
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-/// @brief main function
-void app_main(void) {
+void task_monitor(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  (void)ctx;
 
+  for (;;) {
+    UBaseType_t const queue_waiting = uxQueueMessagesWaiting(ctx->queue);
+    UBaseType_t const queue_available = uxQueueSpacesAvailable(ctx->queue);
+    ESP_LOGI(TAG, "mon: q_used=%u q_free=%u produced=%u processed=%u dropped=%u stack(acq/proc/mon)=%u/%u/%u heap8=%u",
+             static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
+             static_cast<unsigned>(g_produced_samples), static_cast<unsigned>(g_processed_samples),
+             static_cast<unsigned>(g_dropped_samples), static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
+
+    vTaskDelay(pdMS_TO_TICKS(DEBUG_MONITOR_PERIOD_MS));
+  }
+}
+} // namespace
+
+extern "C" void app_main(void) {
   esp_log_level_set(TAG, MAIN_LOG_LEVEL);
-  esp_log_level_set("mpx", ESP_LOG_ERROR);
 
-  ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
-  ESP_LOGD(TAG, "Max alloc Heap: %u", esp_get_minimum_free_heap_size());
-  ESP_LOGD(TAG, "SDK version: %s", esp_get_idf_version());
+  ESP_LOGI(TAG, "Booting false.alarm production pipeline");
+  ESP_LOGI(TAG, "Sampling=%d Hz, window=%u, history=%u", SAMPLING_RATE_HZ, kWindowSize, kHistorySamples);
 
-  /* Print chip information */
-  esp_chip_info_t chip_info;
-  esp_chip_info(&chip_info);
-  ESP_LOGD(TAG, "[Producer] ESP32%s rev %d, %d CPU cores, WiFi%s%s%s, ", (chip_info.model & CHIP_ESP32S2) ? "-S2" : "",
-           chip_info.revision, chip_info.cores, (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-           (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
-           (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
+#if (SIGNAL_SOURCE_KIND == 0) || (LOG_TO_SD_ENABLED == 1)
+  SdCardService sd_service;
+#endif
 
-  // ESP_LOGD(TAG, "%uMB %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
-  //        (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+  std::unique_ptr<ISignalSource> signal_source;
 
-  // if(psramFound()) {
-  //   ESP_LOGD(TAG, ", %uMB %s PSRAM\n", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
-  //        (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
-  // } else {
-  //   ESP_LOGD(TAG, ", No PSRAM found\n");
-  // }
-  ring_buf = xRingbufferCreateNoSplit(sizeof(float), RING_BUFFER_SIZE);
+#if SIGNAL_SOURCE_KIND == 0
+  signal_source = std::make_unique<SdCsvSignalSource>(sd_service);
+#elif SIGNAL_SOURCE_KIND == 1
+  signal_source = std::make_unique<AnalogSignalSource>();
+#elif SIGNAL_SOURCE_KIND == 2
+  signal_source = std::make_unique<I2cSensorSignalSource>();
+#else
+#error "Invalid SIGNAL_SOURCE_KIND. Valid values: 0=SD CSV, 1=Analog ADC, 2=I2C Sensor"
+#endif
 
-  if (ring_buf == nullptr) {
-    ESP_LOGE(TAG, "[Setup] Error creating the ring_buf. Aborting.");
-    esp_restart();
-  }
-
-#if defined(FILE_DATA)
-  ESP_LOGI(TAG, "Initializing LittleFS");
-
-  esp_vfs_littlefs_conf_t const conf = {
-      .base_path = "/littlefs",
-      .partition_label = "littlefs",
-      .format_if_mount_failed = false,
-      .dont_mount = false,
-  };
-
-  // Use settings defined above to initialize and mount LittleFS filesystem.
-  // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
-  esp_err_t ret = esp_vfs_littlefs_register(&conf);
-
-  if (ret != ESP_OK) {
-    if (ret == ESP_FAIL) {
-      ESP_LOGE(TAG, "Failed to mount or format filesystem");
-    } else if (ret == ESP_ERR_NOT_FOUND) {
-      ESP_LOGE(TAG, "Failed to find LittleFS partition");
-    } else {
-      ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
-    }
+  if (signal_source == nullptr) {
+    ESP_LOGE(TAG, "Signal source factory returned null");
     return;
   }
 
-  size_t total = 0, used = 0;
-  ret = esp_littlefs_info(conf.partition_label, &total, &used);
-
-  ESP_LOGI(TAG, "LittleFS: %u / %u", used, total);
-
-  if (esp_littlefs_mounted("littlefs")) {
-    ESP_LOGI(TAG, "LittleFS mounted");
-  } else {
-    ESP_LOGE(TAG, "LittleFS not mounted");
+#if (SIGNAL_SOURCE_KIND == 0) || (LOG_TO_SD_ENABLED == 1)
+  {
+    esp_err_t const mount_ret = sd_service.mount();
+    if (mount_ret != ESP_OK) {
+      ESP_LOGE(TAG, "Cannot continue without SD card (%s)", esp_err_to_name(mount_ret));
+      return;
+    }
   }
+#endif
 
-  file = fopen("/littlefs/floss.csv", "r");
-
-  if (file == nullptr) {
-    esp_vfs_littlefs_unregister(conf.partition_label);
-    ESP_LOGE(TAG, "Failed to open file for reading");
+  esp_err_t const source_init_ret = signal_source->init();
+  if (source_init_ret != ESP_OK) {
+    ESP_LOGE(TAG, "Signal source init failed for %s (%s)", signal_source->name(), esp_err_to_name(source_init_ret));
     return;
   }
-#endif
 
-  ESP_LOGD(TAG, "Creating task 0");
-
-  TaskHandle_t read_task_handle = nullptr;
-  TaskHandle_t compute_task_handle = nullptr;
-  BaseType_t res;
-
-  res = xTaskCreatePinnedToCore(
-      task_read_signal,     // Task function
-      "ReadSignal",         // Just a name
-      20000,                // Stack size in bytes
-      nullptr,              // Parameter passed as input of the task (can be NULL)
-      tskIDLE_PRIORITY + 3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-      &read_task_handle,    // Task Handle (can be NULL)
-      CORE_0);
-
-  configASSERT(read_task_handle);
-
-  if (res == pdPASS) {
-    ESP_LOGD(TAG, "Task ReadSignal created");
-  } else {
-    ESP_LOGE(TAG, "Failed to create task ReadSignal");
+  QueueHandle_t const sample_queue =
+      xQueueCreate(static_cast<UBaseType_t>(RING_BUFFER_CAPACITY_SAMPLES), sizeof(SignalPacket));
+  if (sample_queue == nullptr) {
+    ESP_LOGE(TAG, "Failed to create sample queue");
+    return;
   }
 
-  ESP_LOGD(TAG, "Creating task 1");
+  RuntimeContext runtime_ctx;
+  runtime_ctx.queue = sample_queue;
+  runtime_ctx.source = signal_source.get();
+#if LOG_TO_SD_ENABLED
+  runtime_ctx.sd_service = &sd_service;
+#endif
 
-  res = xTaskCreatePinnedToCore(
-      task_compute,         // Task function
-      "Compute",            // Just a name
-      20000,                // This stack size in bytes can be checked & adjusted by reading the Stack Highwater
-      nullptr,              // Parameter passed as input of the task (can be NULL)
-      tskIDLE_PRIORITY + 3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-      &compute_task_handle, // Task Handle (can be NULL)
-      CORE_1);
-
-  configASSERT(compute_task_handle);
-
-  if (res == pdPASS) {
-    ESP_LOGD(TAG, "Task Compute created");
-  } else {
-    ESP_LOGE(TAG, "Failed to create task Compute");
+  BaseType_t const acq_res = xTaskCreatePinnedToCore(task_acquire_signal, "AcquireSignal", TASK_ACQ_STACK_BYTES,
+                                                     &runtime_ctx, TASK_ACQ_PRIORITY, &g_task_acq, TASK_ACQ_CORE);
+  if (acq_res != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create acquisition task");
+    return;
   }
 
-  ESP_LOGD(TAG, "Main entering in infinite loop");
-  while (true) {
+  BaseType_t const proc_res = xTaskCreatePinnedToCore(task_process_signal, "ProcessSignal", TASK_PROC_STACK_BYTES,
+                                                      &runtime_ctx, TASK_PROC_PRIORITY, &g_task_proc, TASK_PROC_CORE);
+  if (proc_res != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create processing task");
+    return;
+  }
 
-#if defined(__PLATFORMIO_BUILD_DEBUG__)
-    if (esp_log_level_get(TAG) == ESP_LOG_VERBOSE) {
-
-      ESP_LOGV(TAG, "Task Compute StackHighWaterMark: %u", uxTaskGetStackHighWaterMark(compute_task_handle));
-      ESP_LOGV(TAG, "Task Read    StackHighWaterMark: %u", uxTaskGetStackHighWaterMark(read_task_handle));
-      ESP_LOGV(TAG, "Minimum  8bits-aligned Free Heap: %u", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
-      ESP_LOGV(TAG, "Minimum 32bits-aligned Free Heap: %u", heap_caps_get_minimum_free_size(MALLOC_CAP_32BIT));
-      ESP_LOGV(TAG, "Current  8bits-aligned Free Heap: %u/%u", heap_caps_get_free_size(MALLOC_CAP_8BIT),
-               heap_caps_get_total_size(MALLOC_CAP_8BIT));
-      ESP_LOGV(TAG, "Current 32bits-aligned Free Heap: %u/%u", heap_caps_get_free_size(MALLOC_CAP_32BIT),
-               heap_caps_get_total_size(MALLOC_CAP_32BIT));
-      xRingbufferPrintInfo(ring_buf);
-
-#if defined(LOG_CPU_LOAD)
-      char taskbuffer[100];
-      vTaskGetRunTimeStats(taskbuffer);
-      ESP_LOGV(TAG, "\n%s", taskbuffer);
+#if ENABLE_MONITOR_TASK
+  BaseType_t const mon_res = xTaskCreatePinnedToCore(task_monitor, "MonitorRuntime", TASK_MON_STACK_BYTES, &runtime_ctx,
+                                                     TASK_MON_PRIORITY, &g_task_mon, TASK_MON_CORE);
+  if (mon_res != pdPASS) {
+    ESP_LOGW(TAG, "Monitor task not created");
+  }
 #endif
 
-      // pxTaskStatusArray = (TaskStatus_t *)pvPortMalloc(arraysize * sizeof(TaskStatus_t));
-      // vPortFree(pxTaskStatusArray);
-    }
-#endif
+  ESP_LOGI(TAG, "Pipeline started: acquisition(core=%d) processing(core=%d)", TASK_ACQ_CORE, TASK_PROC_CORE);
 
-    vTaskDelay((portTICK_PERIOD_MS * 5000));
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(10000));
   }
 }
-#ifdef __cplusplus
-}
-#endif
 
 #endif
