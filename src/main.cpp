@@ -120,6 +120,10 @@ int main() {
 #define SERIAL_PLOT_EVERY_N 1
 #endif
 
+#ifndef SERIAL_PLOT_TELEPLOT_FORMAT
+#define SERIAL_PLOT_TELEPLOT_FORMAT 0
+#endif
+
 #ifndef PROCESS_TASK_COOPERATIVE_DELAY_MS
 #define PROCESS_TASK_COOPERATIVE_DELAY_MS 0
 #endif
@@ -197,6 +201,9 @@ void task_process_signal(void *pv_parameters) {
 #if SERIAL_PLOT_MODE
   uint32_t serial_plot_counter = 0U;
 #endif
+#if PROCESS_TASK_COOPERATIVE_DELAY_MS == 0
+  uint32_t wdt_yield_counter = 0U;
+#endif
 
   for (;;) {
     if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
@@ -221,7 +228,25 @@ void task_process_signal(void *pv_parameters) {
 
     uint16_t const profile_len = mpx.get_profile_len();
     uint16_t const floss_probe_index = compute_floss_probe_index(profile_len);
-    float const floss_value = mpx.get_floss()[floss_probe_index];
+    float const *floss_profile = mpx.get_floss();
+
+    uint16_t min_floss_index = 0U;
+    float min_floss_value = 0.0F;
+    uint16_t const min_search_len = (profile_len > kWindowSize) ? static_cast<uint16_t>(profile_len - kWindowSize) : 0U;
+    uint16_t const data_buffer_mid = static_cast<uint16_t>(mpx.get_buffer_size() / 2U);
+    uint16_t const min_search_start = (data_buffer_mid < min_search_len) ? data_buffer_mid : 0U;
+    if (min_search_len > 0U) {
+      min_floss_index = min_search_start;
+      min_floss_value = floss_profile[min_search_start];
+      for (uint16_t i = static_cast<uint16_t>(min_search_start + 1U); i < min_search_len; ++i) {
+        if (floss_profile[i] < min_floss_value) {
+          min_floss_value = floss_profile[i];
+          min_floss_index = i;
+        }
+      }
+    }
+
+    float const floss_value = (profile_len > 0U) ? floss_profile[floss_probe_index] : 0.0F;
     float const latest_sample = samples[recv_count - 1U];
 
     if (floss_value <= FLOSS_ALERT_THRESHOLD) {
@@ -239,10 +264,20 @@ void task_process_signal(void *pv_parameters) {
 #endif
 
 #if SERIAL_PLOT_MODE
-    serial_plot_counter += recv_count;
-    if (serial_plot_counter >= SERIAL_PLOT_EVERY_N) {
-      serial_plot_counter = 0U;
-      std::printf("%.6f,%.6f\n", latest_sample, floss_value);
+    for (uint16_t i = 0U; i < recv_count; ++i) {
+      serial_plot_counter++;
+      if (serial_plot_counter >= SERIAL_PLOT_EVERY_N) {
+        serial_plot_counter = 0U;
+#if SERIAL_PLOT_TELEPLOT_FORMAT
+        std::printf(">sample:%.6f\n", samples[i]);
+        std::printf(">floss:%.6f\n", floss_value);
+        std::printf(">min_floss_index:%u\n", static_cast<unsigned>(min_floss_index));
+        std::printf(">min_floss_value:%.6f\n", min_floss_value);
+#else
+        std::printf("%.6f,%.6f,%u,%.6f\n", samples[i], floss_value, static_cast<unsigned>(min_floss_index),
+                    min_floss_value);
+#endif
+      }
     }
 #endif
 
@@ -259,6 +294,15 @@ void task_process_signal(void *pv_parameters) {
 #if PROCESS_TASK_COOPERATIVE_DELAY_MS > 0
     // Give IDLE task time to run when processing+UART output keeps this loop hot.
     vTaskDelay(pdMS_TO_TICKS(PROCESS_TASK_COOPERATIVE_DELAY_MS));
+#else
+    // taskYIELD() only yields to tasks of equal or higher priority, so IDLE
+    // (priority 0) never runs. Instead, block for 1 tick every 10 iterations
+    // (~0.64s at 250 Hz / batch-16) — well within the 5s WDT timeout, with
+    // < 0.16% CPU overhead.
+    if (++wdt_yield_counter >= 3U) {
+      wdt_yield_counter = 0U;
+      vTaskDelay(1);
+    }
 #endif
   }
 }

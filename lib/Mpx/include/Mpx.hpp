@@ -68,6 +68,7 @@ public:
   [[nodiscard]] const float *get_vww() const noexcept { return vww_.get(); };
 
   // Lightweight scalar state accessors.
+  [[nodiscard]] uint16_t get_buffer_size() const noexcept { return buffer_size_; };
   [[nodiscard]] uint16_t get_buffer_used() const noexcept { return buffer_used_; };
   [[nodiscard]] int16_t get_buffer_start() const noexcept { return buffer_start_; };
   [[nodiscard]] uint16_t get_profile_len() const noexcept { return profile_len_; };
