@@ -48,20 +48,18 @@ esp_err_t SdCardService::mount() {
     return ESP_OK;
   }
 
-  esp_vfs_fat_sdmmc_mount_config_t const mount_config = {
-      .format_if_mount_failed = false,
-      .max_files = 5,
-      .allocation_unit_size = 16 * 1024,
-  };
+  esp_vfs_fat_sdmmc_mount_config_t mount_config = {};
+  mount_config.format_if_mount_failed = false;
+  mount_config.max_files = 5;
+  mount_config.allocation_unit_size = 16 * 1024;
 
-  spi_bus_config_t const bus_cfg = {
-      .mosi_io_num = SD_SPI_MOSI_PIN,
-      .miso_io_num = SD_SPI_MISO_PIN,
-      .sclk_io_num = SD_SPI_SCK_PIN,
-      .quadwp_io_num = -1,
-      .quadhd_io_num = -1,
-      .max_transfer_sz = 4000,
-  };
+  spi_bus_config_t bus_cfg = {};
+  bus_cfg.mosi_io_num = SD_SPI_MOSI_PIN;
+  bus_cfg.miso_io_num = SD_SPI_MISO_PIN;
+  bus_cfg.sclk_io_num = SD_SPI_SCK_PIN;
+  bus_cfg.quadwp_io_num = -1;
+  bus_cfg.quadhd_io_num = -1;
+  bus_cfg.max_transfer_sz = 4000;
 
   esp_err_t ret = spi_bus_initialize(SD_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
   if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {

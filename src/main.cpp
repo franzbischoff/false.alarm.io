@@ -10,6 +10,7 @@ int main() {
 #else
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <memory>
 
@@ -17,6 +18,7 @@ int main() {
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -124,8 +126,16 @@ int main() {
 #define SERIAL_PLOT_TELEPLOT_FORMAT 0
 #endif
 
+#ifndef SERIAL_PLOT_INCLUDE_MIN_FLOSS
+#define SERIAL_PLOT_INCLUDE_MIN_FLOSS 1
+#endif
+
 #ifndef PROCESS_TASK_COOPERATIVE_DELAY_MS
 #define PROCESS_TASK_COOPERATIVE_DELAY_MS 0
+#endif
+
+#ifndef PROCESS_TASK_WDT_RESET_PERIOD_MS
+#define PROCESS_TASK_WDT_RESET_PERIOD_MS 1000
 #endif
 
 namespace {
@@ -152,9 +162,9 @@ TaskHandle_t g_task_acq = nullptr;
 TaskHandle_t g_task_proc = nullptr;
 TaskHandle_t g_task_mon = nullptr;
 
-volatile uint32_t g_dropped_samples = 0U;
-volatile uint32_t g_produced_samples = 0U;
-volatile uint32_t g_processed_samples = 0U;
+std::atomic<uint32_t> g_dropped_samples{0U};
+std::atomic<uint32_t> g_produced_samples{0U};
+std::atomic<uint32_t> g_processed_samples{0U};
 
 uint16_t compute_floss_probe_index(uint16_t profile_len) {
   uint16_t const probe_offset = static_cast<uint16_t>(2U * kWindowSize);
@@ -175,9 +185,9 @@ void task_acquire_signal(void *pv_parameters) {
     if (read_ret == ESP_OK) {
       packet.timestamp_us = static_cast<uint64_t>(esp_timer_get_time());
       if (xQueueSend(ctx->queue, &packet, 0) != pdTRUE) {
-        g_dropped_samples++;
+        g_dropped_samples.fetch_add(1U, std::memory_order_relaxed);
       } else {
-        g_produced_samples++;
+        g_produced_samples.fetch_add(1U, std::memory_order_relaxed);
       }
     } else {
       ESP_LOGW(TAG, "Acquisition read failed (%s)", esp_err_to_name(read_ret));
@@ -192,8 +202,15 @@ void task_process_signal(void *pv_parameters) {
   MatrixProfile::Mpx mpx(kWindowSize, 0.5F, 0U, kHistorySamples);
   mpx.prune_buffer();
 
+  esp_err_t const wdt_add_ret = esp_task_wdt_add(nullptr);
+  if ((wdt_add_ret != ESP_OK) && (wdt_add_ret != ESP_ERR_INVALID_STATE)) {
+    ESP_LOGW(TAG, "Process task WDT add failed (%s)", esp_err_to_name(wdt_add_ret));
+  }
+
   std::array<float, MPX_BATCH_SIZE> samples{};
   SignalPacket packet = {0.0F, 0U};
+  TickType_t last_wdt_reset_tick = xTaskGetTickCount();
+  TickType_t const wdt_reset_period_ticks = pdMS_TO_TICKS(PROCESS_TASK_WDT_RESET_PERIOD_MS);
 
 #if APP_DEBUG_OUTPUT
   uint32_t debug_counter = 0U;
@@ -201,12 +218,13 @@ void task_process_signal(void *pv_parameters) {
 #if SERIAL_PLOT_MODE
   uint32_t serial_plot_counter = 0U;
 #endif
-#if PROCESS_TASK_COOPERATIVE_DELAY_MS == 0
-  uint32_t wdt_yield_counter = 0U;
-#endif
 
   for (;;) {
-    if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
+    if (xQueueReceive(ctx->queue, &packet, wdt_reset_period_ticks) != pdTRUE) {
+      if (esp_task_wdt_reset() != ESP_OK) {
+        ESP_LOGW(TAG, "Process task WDT reset failed while idle");
+      }
+      last_wdt_reset_tick = xTaskGetTickCount();
       continue;
     }
 
@@ -224,12 +242,30 @@ void task_process_signal(void *pv_parameters) {
 
     (void)mpx.compute(samples.data(), recv_count);
     mpx.floss();
-    g_processed_samples += recv_count;
+    g_processed_samples.fetch_add(static_cast<uint32_t>(recv_count), std::memory_order_relaxed);
 
     uint16_t const profile_len = mpx.get_profile_len();
     uint16_t const floss_probe_index = compute_floss_probe_index(profile_len);
     float const *floss_profile = mpx.get_floss();
 
+    float const floss_value = (profile_len > 0U) ? floss_profile[floss_probe_index] : 0.0F;
+
+    if (floss_value <= FLOSS_ALERT_THRESHOLD) {
+      ESP_LOGW(TAG, "ALERT: floss[%u]=%.5f <= %.5f (ts=%llu)", floss_probe_index, floss_value, FLOSS_ALERT_THRESHOLD,
+               static_cast<unsigned long long>(packet.timestamp_us));
+    }
+
+#if APP_DEBUG_OUTPUT
+    debug_counter += recv_count;
+    if (debug_counter >= DEBUG_LOG_EVERY_N_SAMPLES) {
+      debug_counter = 0U;
+      ESP_LOGI(TAG, "dbg: source=%s sample=%.5f floss[%u]=%.5f ts=%llu", ctx->source->name(), samples[recv_count - 1U],
+               floss_probe_index, floss_value, static_cast<unsigned long long>(packet.timestamp_us));
+    }
+#endif
+
+#if SERIAL_PLOT_MODE
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
     uint16_t min_floss_index = 0U;
     float min_floss_value = 0.0F;
     uint16_t const min_search_len = (profile_len > kWindowSize) ? static_cast<uint16_t>(profile_len - kWindowSize) : 0U;
@@ -245,25 +281,8 @@ void task_process_signal(void *pv_parameters) {
         }
       }
     }
-
-    float const floss_value = (profile_len > 0U) ? floss_profile[floss_probe_index] : 0.0F;
-    float const latest_sample = samples[recv_count - 1U];
-
-    if (floss_value <= FLOSS_ALERT_THRESHOLD) {
-      ESP_LOGW(TAG, "ALERT: floss[%u]=%.5f <= %.5f (ts=%llu)", floss_probe_index, floss_value, FLOSS_ALERT_THRESHOLD,
-               static_cast<unsigned long long>(packet.timestamp_us));
-    }
-
-#if APP_DEBUG_OUTPUT
-    debug_counter += recv_count;
-    if (debug_counter >= DEBUG_LOG_EVERY_N_SAMPLES) {
-      debug_counter = 0U;
-      ESP_LOGI(TAG, "dbg: source=%s sample=%.5f floss[%u]=%.5f ts=%llu", ctx->source->name(), latest_sample,
-               floss_probe_index, floss_value, static_cast<unsigned long long>(packet.timestamp_us));
-    }
 #endif
 
-#if SERIAL_PLOT_MODE
     for (uint16_t i = 0U; i < recv_count; ++i) {
       serial_plot_counter++;
       if (serial_plot_counter >= SERIAL_PLOT_EVERY_N) {
@@ -271,11 +290,17 @@ void task_process_signal(void *pv_parameters) {
 #if SERIAL_PLOT_TELEPLOT_FORMAT
         std::printf(">sample:%.6f\n", samples[i]);
         std::printf(">floss:%.6f\n", floss_value);
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
         std::printf(">min_floss_index:%u\n", static_cast<unsigned>(min_floss_index));
         std::printf(">min_floss_value:%.6f\n", min_floss_value);
+#endif
 #else
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
         std::printf("%.6f,%.6f,%u,%.6f\n", samples[i], floss_value, static_cast<unsigned>(min_floss_index),
                     min_floss_value);
+#else
+        std::printf("%.6f,%.6f\n", samples[i], floss_value);
+#endif
 #endif
       }
     }
@@ -283,6 +308,7 @@ void task_process_signal(void *pv_parameters) {
 
 #if LOG_TO_SD_ENABLED
     if (ctx->sd_service->is_mounted()) {
+      float const latest_sample = samples[recv_count - 1U];
       char log_line[160] = {0};
       std::snprintf(log_line, sizeof(log_line), "ts_us=%llu,sample=%.6f,floss[%u]=%.6f",
                     static_cast<unsigned long long>(packet.timestamp_us), latest_sample, floss_probe_index,
@@ -291,19 +317,13 @@ void task_process_signal(void *pv_parameters) {
     }
 #endif
 
-#if PROCESS_TASK_COOPERATIVE_DELAY_MS > 0
-    // Give IDLE task time to run when processing+UART output keeps this loop hot.
-    vTaskDelay(pdMS_TO_TICKS(PROCESS_TASK_COOPERATIVE_DELAY_MS));
-#else
-    // taskYIELD() only yields to tasks of equal or higher priority, so IDLE
-    // (priority 0) never runs. Instead, block for 1 tick every 10 iterations
-    // (~0.64s at 250 Hz / batch-16) — well within the 5s WDT timeout, with
-    // < 0.16% CPU overhead.
-    if (++wdt_yield_counter >= 3U) {
-      wdt_yield_counter = 0U;
-      vTaskDelay(1);
+    TickType_t const now_tick = xTaskGetTickCount();
+    if ((now_tick - last_wdt_reset_tick) >= wdt_reset_period_ticks) {
+      if (esp_task_wdt_reset() != ESP_OK) {
+        ESP_LOGW(TAG, "Process task WDT reset failed while active");
+      }
+      last_wdt_reset_tick = now_tick;
     }
-#endif
   }
 }
 
@@ -316,8 +336,10 @@ void task_monitor(void *pv_parameters) {
     UBaseType_t const queue_available = uxQueueSpacesAvailable(ctx->queue);
     ESP_LOGI(TAG, "mon: q_used=%u q_free=%u produced=%u processed=%u dropped=%u stack(acq/proc/mon)=%u/%u/%u heap8=%u",
              static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
-             static_cast<unsigned>(g_produced_samples), static_cast<unsigned>(g_processed_samples),
-             static_cast<unsigned>(g_dropped_samples), static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
+             static_cast<unsigned>(g_produced_samples.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(g_processed_samples.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(g_dropped_samples.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));

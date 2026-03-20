@@ -51,6 +51,9 @@ CONFIG_FATFS_PER_FILE_CACHE=y
 # Keep watchdogs active for robustness in long-running tasks
 CONFIG_ESP_INT_WDT=y
 CONFIG_ESP_TASK_WDT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+# CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1 is not set
 
 # Boot behavior suitable for iterative development
 CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
