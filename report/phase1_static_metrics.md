@@ -193,4 +193,63 @@ The production firmware uses **27.7%** (`esp32_prod`, 282,939 B) to **28.7%** (`
 
 ---
 
-*Next step: Phase 2 — Runtime instrumentation (per-batch compute time, end-to-end latency, FreeRTOS CPU load by task).*
+## 9. Phase 2 Implementation Status (Runtime Instrumentation)
+
+Date implemented: 2026-03-20
+
+Phase 2 instrumentation was added to the runtime pipeline in `src/main.cpp` and validated by compiling all three firmware profiles.
+
+### 9.1 Implemented metrics
+
+The following online metrics are now collected continuously in the process task and published periodically by the monitor task:
+
+- processed batch count (`batches`)
+- batch compute time (`batch_us`) for `compute()` + `floss()`
+	- average over last monitor interval
+	- global min and max since boot
+- end-to-end latency (`e2e_us`) from packet acquisition timestamp to end of processing
+	- average over last monitor interval
+	- global min and max since boot
+- instantaneous queue occupancy (`q_used`, `q_free`)
+- peak queue occupancy since boot (`q_peak`)
+- throughput per monitor interval
+	- produced rate in Hz
+	- processed rate in Hz
+- existing health telemetry retained
+	- dropped samples
+	- per-task stack high-water marks
+	- free heap (`heap8_free`) and largest contiguous free block (`heap8_largest`)
+
+### 9.2 Monitor log format (new)
+
+The monitor line now includes:
+
+```text
+mon: q_used=<u> q_free=<u> q_peak=<u> produced=<u>(<hz>Hz) processed=<u>(<hz>Hz) dropped=<u> batches=<u> batch_us(avg/min/max)=<f>/<u>/<u> e2e_us(avg/min/max)=<f>/<u>/<u> stack(acq/proc/mon)=<u>/<u>/<u> heap8_free=<u> heap8_largest=<u>
+```
+
+### 9.3 Build validation after instrumentation
+
+All profiles compiled successfully after adding Phase 2 metrics:
+
+| Profile | Result | Runtime memory line from PlatformIO |
+|---|---|---|
+| `esp32_prod` | SUCCESS | RAM 13,908 B (4.2%), Flash 283,563 B (27.0%) |
+| `esp32_prod_fast` | SUCCESS | RAM 12,188 B (3.7%), Flash 295,111 B (28.1%) |
+| `esp32_demo` | SUCCESS | RAM 14,460 B (4.4%), Flash 311,917 B (29.7%) |
+
+### 9.4 Recommended experimental protocol (data collection)
+
+To generate publishable runtime tables/figures from this instrumentation:
+
+1. Run each profile for 60 s in steady-state (`esp32_prod`, `esp32_prod_fast`, `esp32_demo`).
+2. Capture all `mon:` lines from serial monitor to CSV/text log.
+3. Compute per-profile statistics:
+	 - `produced` and `processed` mean rates (Hz)
+	 - dropped samples total and drop rate
+	 - `batch_us` avg/min/max and p95
+	 - `e2e_us` avg/min/max and p95
+	 - max `q_peak` and typical `q_used`
+4. Repeat at least 3 runs per profile and report mean ± std.
+
+This closes the implementation part of Phase 2; the remaining step is the experimental acquisition campaign and statistical aggregation.

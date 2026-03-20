@@ -165,6 +165,26 @@ TaskHandle_t g_task_mon = nullptr;
 std::atomic<uint32_t> g_dropped_samples{0U};
 std::atomic<uint32_t> g_produced_samples{0U};
 std::atomic<uint32_t> g_processed_samples{0U};
+std::atomic<uint32_t> g_processed_batches{0U};
+std::atomic<uint64_t> g_batch_compute_time_us_sum{0U};
+std::atomic<uint64_t> g_e2e_latency_us_sum{0U};
+std::atomic<uint32_t> g_batch_compute_time_us_min{UINT32_MAX};
+std::atomic<uint32_t> g_batch_compute_time_us_max{0U};
+std::atomic<uint32_t> g_e2e_latency_us_min{UINT32_MAX};
+std::atomic<uint32_t> g_e2e_latency_us_max{0U};
+std::atomic<uint32_t> g_queue_peak_samples{0U};
+
+void update_atomic_min(std::atomic<uint32_t> &target, uint32_t candidate) {
+  uint32_t current = target.load(std::memory_order_relaxed);
+  while ((candidate < current) && !target.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+  }
+}
+
+void update_atomic_max(std::atomic<uint32_t> &target, uint32_t candidate) {
+  uint32_t current = target.load(std::memory_order_relaxed);
+  while ((candidate > current) && !target.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+  }
+}
 
 uint16_t compute_floss_probe_index(uint16_t profile_len) {
   uint16_t const probe_offset = static_cast<uint16_t>(2U * kWindowSize);
@@ -240,9 +260,22 @@ void task_process_signal(void *pv_parameters) {
       samples[recv_count++] = next_packet.sample;
     }
 
+    uint64_t const batch_start_us = static_cast<uint64_t>(esp_timer_get_time());
     (void)mpx.compute(samples.data(), recv_count);
     mpx.floss();
+    uint64_t const batch_end_us = static_cast<uint64_t>(esp_timer_get_time());
+
+    uint32_t const batch_compute_time_us = static_cast<uint32_t>(batch_end_us - batch_start_us);
+    uint32_t const e2e_latency_us = static_cast<uint32_t>(batch_end_us - packet.timestamp_us);
+
     g_processed_samples.fetch_add(static_cast<uint32_t>(recv_count), std::memory_order_relaxed);
+    g_processed_batches.fetch_add(1U, std::memory_order_relaxed);
+    g_batch_compute_time_us_sum.fetch_add(batch_compute_time_us, std::memory_order_relaxed);
+    g_e2e_latency_us_sum.fetch_add(e2e_latency_us, std::memory_order_relaxed);
+    update_atomic_min(g_batch_compute_time_us_min, batch_compute_time_us);
+    update_atomic_max(g_batch_compute_time_us_max, batch_compute_time_us);
+    update_atomic_min(g_e2e_latency_us_min, e2e_latency_us);
+    update_atomic_max(g_e2e_latency_us_max, e2e_latency_us);
 
     uint16_t const profile_len = mpx.get_profile_len();
     uint16_t const floss_probe_index = compute_floss_probe_index(profile_len);
@@ -331,18 +364,68 @@ void task_monitor(void *pv_parameters) {
   auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
   (void)ctx;
 
+  uint32_t previous_produced = 0U;
+  uint32_t previous_processed = 0U;
+  uint32_t previous_batches = 0U;
+  uint64_t previous_batch_compute_sum_us = 0U;
+  uint64_t previous_e2e_latency_sum_us = 0U;
+
+  TickType_t previous_tick = xTaskGetTickCount();
+
   for (;;) {
+    TickType_t const now_tick = xTaskGetTickCount();
+    uint32_t const period_ms = static_cast<uint32_t>((now_tick - previous_tick) * portTICK_PERIOD_MS);
+    previous_tick = now_tick;
+
     UBaseType_t const queue_waiting = uxQueueMessagesWaiting(ctx->queue);
     UBaseType_t const queue_available = uxQueueSpacesAvailable(ctx->queue);
-    ESP_LOGI(TAG, "mon: q_used=%u q_free=%u produced=%u processed=%u dropped=%u stack(acq/proc/mon)=%u/%u/%u heap8=%u",
+
+    update_atomic_max(g_queue_peak_samples, static_cast<uint32_t>(queue_waiting));
+
+    uint32_t const produced = g_produced_samples.load(std::memory_order_relaxed);
+    uint32_t const processed = g_processed_samples.load(std::memory_order_relaxed);
+    uint32_t const dropped = g_dropped_samples.load(std::memory_order_relaxed);
+    uint32_t const batches = g_processed_batches.load(std::memory_order_relaxed);
+    uint64_t const batch_compute_sum_us = g_batch_compute_time_us_sum.load(std::memory_order_relaxed);
+    uint64_t const e2e_latency_sum_us = g_e2e_latency_us_sum.load(std::memory_order_relaxed);
+
+    uint32_t const produced_delta = produced - previous_produced;
+    uint32_t const processed_delta = processed - previous_processed;
+    uint32_t const batches_delta = batches - previous_batches;
+    uint64_t const batch_compute_sum_delta = batch_compute_sum_us - previous_batch_compute_sum_us;
+    uint64_t const e2e_latency_sum_delta = e2e_latency_sum_us - previous_e2e_latency_sum_us;
+
+    previous_produced = produced;
+    previous_processed = processed;
+    previous_batches = batches;
+    previous_batch_compute_sum_us = batch_compute_sum_us;
+    previous_e2e_latency_sum_us = e2e_latency_sum_us;
+
+    float const period_s = (period_ms > 0U) ? (static_cast<float>(period_ms) / 1000.0F) : 1.0F;
+    float const produced_rate_hz = static_cast<float>(produced_delta) / period_s;
+    float const processed_rate_hz = static_cast<float>(processed_delta) / period_s;
+    float const batch_compute_avg_us =
+        (batches_delta > 0U) ? (static_cast<float>(batch_compute_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
+    float const e2e_latency_avg_us =
+        (batches_delta > 0U) ? (static_cast<float>(e2e_latency_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
+
+    ESP_LOGI(TAG,
+             "mon: q_used=%u q_free=%u q_peak=%u produced=%u(%.1fHz) processed=%u(%.1fHz) dropped=%u batches=%u "
+             "batch_us(avg/min/max)=%.1f/%u/%u e2e_us(avg/min/max)=%.1f/%u/%u stack(acq/proc/mon)=%u/%u/%u "
+             "heap8_free=%u heap8_largest=%u",
              static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
-             static_cast<unsigned>(g_produced_samples.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(g_processed_samples.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(g_dropped_samples.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(g_queue_peak_samples.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(produced), produced_rate_hz, static_cast<unsigned>(processed), processed_rate_hz,
+             static_cast<unsigned>(dropped), static_cast<unsigned>(batches), batch_compute_avg_us,
+             static_cast<unsigned>(g_batch_compute_time_us_min.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(g_batch_compute_time_us_max.load(std::memory_order_relaxed)), e2e_latency_avg_us,
+             static_cast<unsigned>(g_e2e_latency_us_min.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(g_e2e_latency_us_max.load(std::memory_order_relaxed)),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
-             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)));
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
 
     vTaskDelay(pdMS_TO_TICKS(DEBUG_MONITOR_PERIOD_MS));
   }
