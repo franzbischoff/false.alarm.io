@@ -11,10 +11,12 @@ int main() {
 
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <cstdio>
 #include <memory>
 
 #include "Mpx.hpp"
+#include "sdkconfig.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -185,6 +187,62 @@ void update_atomic_max(std::atomic<uint32_t> &target, uint32_t candidate) {
   while ((candidate > current) && !target.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
   }
 }
+
+#if defined(CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS) && defined(CONFIG_FREERTOS_USE_TRACE_FACILITY)
+void log_task_cpu_load_compact() {
+  constexpr UBaseType_t kMaxTasks = 24U;
+  TaskStatus_t task_status[kMaxTasks] = {};
+  uint32_t total_runtime_ticks = 0U;
+  UBaseType_t const task_count = uxTaskGetSystemState(task_status, kMaxTasks, &total_runtime_ticks);
+
+  if ((task_count == 0U) || (total_runtime_ticks == 0U)) {
+    ESP_LOGW(TAG, "cpu: runtime stats unavailable (task_count=%u total=%u)", static_cast<unsigned>(task_count),
+             static_cast<unsigned>(total_runtime_ticks));
+    return;
+  }
+
+  uint32_t acq_runtime = 0U;
+  uint32_t proc_runtime = 0U;
+  uint32_t mon_runtime = 0U;
+  uint32_t idle0_runtime = 0U;
+  uint32_t idle1_runtime = 0U;
+  uint32_t other_runtime = 0U;
+
+  for (UBaseType_t i = 0U; i < task_count; ++i) {
+    if (task_status[i].xHandle == g_task_acq) {
+      acq_runtime += task_status[i].ulRunTimeCounter;
+      continue;
+    }
+    if (task_status[i].xHandle == g_task_proc) {
+      proc_runtime += task_status[i].ulRunTimeCounter;
+      continue;
+    }
+    if (task_status[i].xHandle == g_task_mon) {
+      mon_runtime += task_status[i].ulRunTimeCounter;
+      continue;
+    }
+
+    char const *name = task_status[i].pcTaskName;
+    if (name == nullptr) {
+      continue;
+    }
+    if (std::strcmp(name, "IDLE0") == 0) {
+      idle0_runtime += task_status[i].ulRunTimeCounter;
+    } else if (std::strcmp(name, "IDLE1") == 0) {
+      idle1_runtime += task_status[i].ulRunTimeCounter;
+    } else {
+      other_runtime += task_status[i].ulRunTimeCounter;
+    }
+  }
+
+  float const scale = 100.0F / static_cast<float>(total_runtime_ticks);
+  ESP_LOGI(TAG, "cpu: acq=%.2f%% proc=%.2f%% mon=%.2f%% idle0=%.2f%% idle1=%.2f%% other=%.2f%% total_ticks=%u tasks=%u",
+           static_cast<float>(acq_runtime) * scale, static_cast<float>(proc_runtime) * scale,
+           static_cast<float>(mon_runtime) * scale, static_cast<float>(idle0_runtime) * scale,
+           static_cast<float>(idle1_runtime) * scale, static_cast<float>(other_runtime) * scale,
+           static_cast<unsigned>(total_runtime_ticks), static_cast<unsigned>(task_count));
+}
+#endif
 
 uint16_t compute_floss_probe_index(uint16_t profile_len) {
   uint16_t const probe_offset = static_cast<uint16_t>(2U * kWindowSize);
@@ -369,6 +427,10 @@ void task_monitor(void *pv_parameters) {
   uint32_t previous_batches = 0U;
   uint64_t previous_batch_compute_sum_us = 0U;
   uint64_t previous_e2e_latency_sum_us = 0U;
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+  uint32_t cpu_stats_call_count = 0U;
+  const uint32_t CPU_STATS_EVERY_N_CALLS = 4U; // Print CPU stats every ~6 seconds (4 calls * 1.5s)
+#endif
 
   TickType_t previous_tick = xTaskGetTickCount();
 
@@ -426,6 +488,19 @@ void task_monitor(void *pv_parameters) {
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+
+    // Print per-task CPU load statistics (only if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS enabled)
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+    cpu_stats_call_count++;
+    if (cpu_stats_call_count >= CPU_STATS_EVERY_N_CALLS) {
+      cpu_stats_call_count = 0U;
+#if defined(CONFIG_FREERTOS_USE_TRACE_FACILITY)
+      log_task_cpu_load_compact();
+#else
+      ESP_LOGW(TAG, "cpu: CONFIG_FREERTOS_USE_TRACE_FACILITY is disabled");
+#endif
+    }
+#endif
 
     vTaskDelay(pdMS_TO_TICKS(DEBUG_MONITOR_PERIOD_MS));
   }
