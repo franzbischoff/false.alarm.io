@@ -280,15 +280,19 @@ void task_process_signal(void *pv_parameters) {
   MatrixProfile::Mpx mpx(kWindowSize, 0.5F, 0U, kHistorySamples);
   mpx.prune_buffer();
 
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
   esp_err_t const wdt_add_ret = esp_task_wdt_add(nullptr);
   if ((wdt_add_ret != ESP_OK) && (wdt_add_ret != ESP_ERR_INVALID_STATE)) {
     ESP_LOGW(TAG, "Process task WDT add failed (%s)", esp_err_to_name(wdt_add_ret));
   }
+#endif
 
   std::array<float, MPX_BATCH_SIZE> samples{};
   SignalPacket packet = {0.0F, 0U};
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
   TickType_t last_wdt_reset_tick = xTaskGetTickCount();
   TickType_t const wdt_reset_period_ticks = pdMS_TO_TICKS(PROCESS_TASK_WDT_RESET_PERIOD_MS);
+#endif
 
 #if APP_DEBUG_OUTPUT
   uint32_t debug_counter = 0U;
@@ -298,6 +302,7 @@ void task_process_signal(void *pv_parameters) {
 #endif
 
   for (;;) {
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
     if (xQueueReceive(ctx->queue, &packet, wdt_reset_period_ticks) != pdTRUE) {
       if (esp_task_wdt_reset() != ESP_OK) {
         ESP_LOGW(TAG, "Process task WDT reset failed while idle");
@@ -305,6 +310,11 @@ void task_process_signal(void *pv_parameters) {
       last_wdt_reset_tick = xTaskGetTickCount();
       continue;
     }
+#else
+    if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+#endif
 
     uint16_t recv_count = 0U;
     samples[recv_count++] = packet.sample;
@@ -408,6 +418,7 @@ void task_process_signal(void *pv_parameters) {
     }
 #endif
 
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
     TickType_t const now_tick = xTaskGetTickCount();
     if ((now_tick - last_wdt_reset_tick) >= wdt_reset_period_ticks) {
       if (esp_task_wdt_reset() != ESP_OK) {
@@ -415,6 +426,7 @@ void task_process_signal(void *pv_parameters) {
       }
       last_wdt_reset_tick = now_tick;
     }
+#endif
   }
 }
 
