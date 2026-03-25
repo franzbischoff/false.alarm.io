@@ -28,6 +28,10 @@ int main() {
 #include "sd_card_service.hpp"
 #include "signal_source.hpp"
 
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+#include "SEGGER_SYSVIEW.h"
+#endif
+
 #ifndef MAIN_LOG_LEVEL
 #define MAIN_LOG_LEVEL ESP_LOG_INFO
 #endif
@@ -302,35 +306,33 @@ void task_process_signal(void *pv_parameters) {
 #endif
 
   for (;;) {
-#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
-    if (xQueueReceive(ctx->queue, &packet, wdt_reset_period_ticks) != pdTRUE) {
-      if (esp_task_wdt_reset() != ESP_OK) {
-        ESP_LOGW(TAG, "Process task WDT reset failed while idle");
-      }
-      last_wdt_reset_tick = xTaskGetTickCount();
-      continue;
-    }
-#else
-    if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
-      continue;
-    }
-#endif
-
     uint16_t recv_count = 0U;
-    samples[recv_count++] = packet.sample;
-
     while (recv_count < static_cast<uint16_t>(samples.size())) {
-      SignalPacket next_packet = {0.0F, 0U};
-      if (xQueueReceive(ctx->queue, &next_packet, 0) != pdTRUE) {
-        break;
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+      if (xQueueReceive(ctx->queue, &packet, wdt_reset_period_ticks) != pdTRUE) {
+        if (esp_task_wdt_reset() != ESP_OK) {
+          ESP_LOGW(TAG, "Process task WDT reset failed while idle");
+        }
+        last_wdt_reset_tick = xTaskGetTickCount();
+        continue;
       }
-      packet = next_packet;
-      samples[recv_count++] = next_packet.sample;
+#else
+      if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
+        continue;
+      }
+#endif
+      samples[recv_count++] = packet.sample;
     }
 
     uint64_t const batch_start_us = static_cast<uint64_t>(esp_timer_get_time());
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+    SEGGER_SYSVIEW_MarkStart(0);
+#endif
     (void)mpx.compute(samples.data(), recv_count);
     mpx.floss();
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+    SEGGER_SYSVIEW_MarkStop(0);
+#endif
     uint64_t const batch_end_us = static_cast<uint64_t>(esp_timer_get_time());
 
     uint32_t const batch_compute_time_us = static_cast<uint32_t>(batch_end_us - batch_start_us);
@@ -478,28 +480,32 @@ void task_monitor(void *pv_parameters) {
     float const period_s = (period_ms > 0U) ? (static_cast<float>(period_ms) / 1000.0F) : 1.0F;
     float const produced_rate_hz = static_cast<float>(produced_delta) / period_s;
     float const processed_rate_hz = static_cast<float>(processed_delta) / period_s;
+    float const proc_est_pct =
+        (period_ms > 0U) ? (static_cast<float>(batch_compute_sum_delta) / (static_cast<float>(period_ms) * 10.0F))
+                         : 0.0F;
     float const batch_compute_avg_us =
         (batches_delta > 0U) ? (static_cast<float>(batch_compute_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
     float const e2e_latency_avg_us =
         (batches_delta > 0U) ? (static_cast<float>(e2e_latency_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
 
-    ESP_LOGI(TAG,
-             "mon: q_used=%u q_free=%u q_peak=%u produced=%u(%.1fHz) processed=%u(%.1fHz) dropped=%u batches=%u "
-             "batch_us(avg/min/max)=%.1f/%u/%u e2e_us(avg/min/max)=%.1f/%u/%u stack(acq/proc/mon)=%u/%u/%u "
-             "heap8_free=%u heap8_largest=%u",
-             static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
-             static_cast<unsigned>(g_queue_peak_samples.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(produced), produced_rate_hz, static_cast<unsigned>(processed), processed_rate_hz,
-             static_cast<unsigned>(dropped), static_cast<unsigned>(batches), batch_compute_avg_us,
-             static_cast<unsigned>(g_batch_compute_time_us_min.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(g_batch_compute_time_us_max.load(std::memory_order_relaxed)), e2e_latency_avg_us,
-             static_cast<unsigned>(g_e2e_latency_us_min.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(g_e2e_latency_us_max.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
-             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
-             static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
-             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
-             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+    ESP_LOGI(
+        TAG,
+        "mon: q_used=%u q_free=%u q_peak=%u produced=%u(%.1fHz) processed=%u(%.1fHz) dropped=%u batches=%u "
+        "proc_est=%.2f%% batch_us(avg/min/max)=%.1f/%u/%u e2e_us(avg/min/max)=%.1f/%u/%u stack(acq/proc/mon)=%u/%u/%u "
+        "heap8_free=%u heap8_largest=%u",
+        static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
+        static_cast<unsigned>(g_queue_peak_samples.load(std::memory_order_relaxed)), static_cast<unsigned>(produced),
+        produced_rate_hz, static_cast<unsigned>(processed), processed_rate_hz, static_cast<unsigned>(dropped),
+        static_cast<unsigned>(batches), proc_est_pct, batch_compute_avg_us,
+        static_cast<unsigned>(g_batch_compute_time_us_min.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(g_batch_compute_time_us_max.load(std::memory_order_relaxed)), e2e_latency_avg_us,
+        static_cast<unsigned>(g_e2e_latency_us_min.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(g_e2e_latency_us_max.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
 
     // Print per-task CPU load statistics (only if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS enabled)
 #ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS

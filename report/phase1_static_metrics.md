@@ -256,20 +256,20 @@ This closes the implementation part of Phase 2; the remaining step is the experi
 
 ### 9.5 First experimental run (single-run snapshot)
 
-Data source: `report/phase2_runtime_summary.csv` (parsed from serial `mon:` logs captured after upload for each profile).
+Data source: `report/phase2_runtime_summary.csv` (parsed from serial `mon:` logs captured after upload for each profile, after the strict batch-accumulation runtime change).
 
 | Profile | `mon` lines | Produced (Hz, mean) | Processed (Hz, mean) | Dropped | `q_peak` | `q_used` (mean) | `batch_us` avg (mean) | `batch_us` min/max (global) | `e2e_us` avg (mean) | `e2e_us` min/max (global) |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
-| `esp32_prod` | 40 | 250.01 | 250.11 | 0 | 67 | 34.4 | 272,988.1 | 231,488 / 280,318 | 275,450.9 | 234,582 / 282,715 |
-| `esp32_prod_fast` | 28 | 250.03 | 249.63 | 0 | 22 | 12.4 | 87,942.6 | 85,418 / 121,659 | 90,222.9 | 86,903 / 121,830 |
-| `esp32_demo` | 43 | 250.02 | 249.67 | 0 | 109 | 58.4 | 445,270.1 | 313,628 / 446,650 | 447,516.6 | 315,370 / 449,283 |
+| `esp32_prod` | 30 | 241.68 | 239.05 | 0 | 96 | 34.2 | 377,005.5 | 389,044 / 395,444 | 377,025.1 | 389,064 / 395,464 |
+| `esp32_prod_fast` | 30 | 241.71 | 239.19 | 0 | 56 | 11.7 | 233,278.3 | 240,501 / 242,409 | 233,295.3 | 240,519 / 242,426 |
+| `esp32_demo` | 30 | 241.69 | 236.38 | 0 | 119 | 54.6 | 463,463.1 | 478,441 / 484,951 | 463,482.3 | 478,460 / 484,972 |
 
 Observations from this first run:
 
 - No dropped samples were observed in any profile.
-- `esp32_prod_fast` is clearly the fastest profile in processing time, with ~3.1x lower `batch_us` mean than `esp32_prod` and ~5.1x lower than `esp32_demo`.
-- `esp32_demo` (debug) shows the highest queue pressure (`q_peak=109`, `q_used` mean 58.4), consistent with lower processing headroom.
-- `esp32_prod` and `esp32_prod_fast` operate near acquisition rate without drops, but `esp32_prod_fast` keeps substantially more queue headroom.
+- `esp32_prod_fast` remains the fastest profile in processing time, with ~1.6x lower `batch_us` mean than `esp32_prod` and ~2.0x lower than `esp32_demo`.
+- `esp32_demo` (debug) still shows the highest queue pressure (`q_peak=119`, `q_used` mean 54.6), consistent with lower processing headroom.
+- `esp32_prod` and `esp32_prod_fast` remain drop-free, and `esp32_prod_fast` preserves the largest queue headroom (`q_peak=56` vs `96` in prod and `119` in demo).
 
 Notes:
 
@@ -382,3 +382,91 @@ This can be achieved via:
 2. **Enable FreeRTOS runtime statistics:** Optionally enable `CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS` to measure CPU load per task and validate that core 1 is fully occupied by the process task.
 
 3. **Statistical aggregation:** Compute publication-grade metrics and prepare figures (latency distributions, throughput over time, queue occupancy patterns).
+
+---
+
+## 9.9 SystemView dual-core trace export (CSV) — publication snapshot
+
+**Date collected:** 2026-03-25
+**Environment:** `esp32_systemview` (instrumented build)
+**Capture mode:** JTAG AppTrace, dual core, reset + 20 s boot delay, 120 s capture window
+**Files:**
+- `traces/instrumented_batch_reset120_core0_20260325_145349.csv`
+- `traces/instrumented_batch_reset120_core1_20260325_145349.csv`
+
+### 9.9.1 Capture integrity and event volume
+
+- Effective trace window: **120.049 s** (both cores)
+- OpenOCD capture report: **0 lost bytes**
+- Total decoded events:
+  - Core 0: **9,331**
+  - Core 1: **7,875**
+
+Top contexts by event count:
+
+| Core | Context | Events |
+|---|---|---:|
+| 0 | `SysTick` | 6,325 |
+| 0 | `AcquireSignal` | 1,188 |
+| 0 | `main` | 1,106 |
+| 1 | `SysTick` | 6,317 |
+| 1 | `FROM_CPU1` | 724 |
+| 1 | `ProcessSignal` | 375 |
+
+This confirms stable dual-core visibility and expected producer/consumer separation (`AcquireSignal` on core 0, `ProcessSignal` on core 1).
+
+### 9.9.2 Startup-to-steady-state timing
+
+First task execution events extracted from CSV:
+
+- First `AcquireSignal` task run (core 0): **1:22.120 013 400**
+- First `ProcessSignal` task run (core 1): **1:22.639 621 725**
+
+Initial producer-to-consumer lag at first activation:
+
+$$\Delta t_{start} \approx 0.520\ \text{s}$$
+
+This lag is consistent with pipeline warm-up and first-batch accumulation after reset.
+
+### 9.9.3 Runtime slice durations (Task Run events)
+
+Raw (including startup outliers):
+
+| Task | n | Mean (ms) | Min (ms) | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| `AcquireSignal` (core 0) | 192 | 59.548 | 21.176 | 54.165 | 63.280 | 469.873 |
+| `ProcessSignal` (core 1) | 181 | 38.399 | 22.136 | 31.596 | 40.711 | 401.992 |
+
+Steady-state filtered snapshot (durations < 100 ms):
+
+| Task | n | Mean (ms) | Min (ms) | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| `AcquireSignal` (core 0) | 189 | 53.178 | 21.176 | 54.165 | 63.193 | 72.307 |
+| `ProcessSignal` (core 1) | 179 | 35.586 | 22.136 | 31.596 | 40.711 | 50.519 |
+
+Interpretation: after startup transients, both tasks exhibit narrow execution bands, with the consumer task (`ProcessSignal`) consistently below the producer in run-slice duration.
+
+### 9.9.4 Task cadence (inter-run interval)
+
+Filtered intervals (`0 < \Delta t < 500 ms`):
+
+| Task | n | Mean (ms) | Min (ms) | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| `AcquireSignal` | 190 | 69.988 | 25.434 | 63.194 | 72.309 | 478.901 |
+| `ProcessSignal` | 179 | 74.409 | 60.763 | 69.878 | 72.309 | 478.901 |
+
+In steady-state, both tasks operate with comparable cadence (about 70 ms median inter-run interval), supporting pipeline synchronization with zero-drop behavior observed in serial metrics.
+
+### 9.9.5 Instrumentation visibility in exported trace
+
+The core 1 CSV contains explicit marker events for the instrumented compute section:
+
+- `Start Marker 0x00000000` at **1:53.954 556 975**
+- `Stop Marker 0x00000000` at **1:54.203 946 650**
+- Marker-reported duration: **249.389 ms**
+
+This is direct evidence that user instrumentation is active and can delimit heavyweight compute phases for publication figures.
+
+### 9.9.6 Publishable statement (ready to reuse)
+
+Across a 120.049 s dual-core SystemView capture with zero trace loss, the ESP32 pipeline shows stable producer/consumer partitioning (`AcquireSignal` on core 0 and `ProcessSignal` on core 1). In steady-state, task run durations remain bounded (`ProcessSignal`: median 31.596 ms, p95 40.711 ms; `AcquireSignal`: median 54.165 ms, p95 63.193 ms), and inter-run cadence is tightly clustered around 70 ms for both tasks. Exported marker events further confirm instrumented compute visibility with an observed marked block of 249.389 ms, enabling reproducible timeline-based profiling for publication.

@@ -163,3 +163,4 @@ api/
 esp32_par*.csv
 dev/
 rcpp/
+traces/

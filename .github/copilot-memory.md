@@ -1,7 +1,59 @@
 # false.alarm.io — Copilot Memory
 
 ## Última atualização
-- Data: 2026-03-11
+- Data: 2026-03-25
+
+## Sessão (2026-03-25) — Batch estrito, SystemView e nova baseline runtime
+✅ **COMPLETO (1 run por perfil coletado)**
+
+### Mudanças concluídas no código
+- `task_process_signal` consolidado em semântica de lote estrito: processamento apenas após acumular `MPX_BATCH_SIZE` completo.
+- Instrumentação de trace adicionada em `src/main.cpp` com guards de compilação:
+  - `#if defined(CONFIG_APPTRACE_SV_ENABLE)`
+  - `SEGGER_SYSVIEW_MarkStart(0)` / `SEGGER_SYSVIEW_MarkStop(0)` em volta de `compute()` + `floss()`.
+
+### Validação de build
+- Compilações validadas com sucesso para:
+  - `esp32_systemview`
+  - `esp32_prod`
+  - `native`
+
+### Capturas SystemView (JTAG)
+- Captura sem reset: `instrumented_batch_core0_20260325_144923.svdat` + `instrumented_batch_core1_20260325_144923.svdat`.
+- Captura com reset (120 s):
+  - `instrumented_batch_reset120_core0_20260325_145349.svdat`
+  - `instrumented_batch_reset120_core1_20260325_145349.svdat`
+- Export CSV de ambos os cores realizado para análise quantitativa.
+
+### Achados quantitativos relevantes (CSV SystemView)
+- Janela efetiva de trace: 120.049 s, sem perda de bytes.
+- Separação por core confirmada:
+  - Core0 dominado por `AcquireSignal`.
+  - Core1 com `ProcessSignal` ativo e eventos de marcador.
+- Marcador de instrumentação observado no core1:
+  - Start Marker 0x00000000 em 1:53.954 556 975
+  - Stop Marker 0x00000000 em 1:54.203 946 650
+  - Duração marcada: 249.389 ms.
+
+### Campanha runtime (1 run por perfil) após mudança de batch
+- Logs coletados:
+  - `report/runtime_prod_mon.log`
+  - `report/runtime_prod_fast_mon.log`
+  - `report/runtime_demo_mon.log`
+- CSV consolidado atualizado: `report/phase2_runtime_summary.csv`
+- Resultado resumido (30 linhas `mon:` por perfil):
+  - `esp32_prod`: produced 241.68 Hz, processed 239.05 Hz, q_peak 96, batch_avg 377005.5 us
+  - `esp32_prod_fast`: produced 241.71 Hz, processed 239.19 Hz, q_peak 56, batch_avg 233278.3 us
+  - `esp32_demo`: produced 241.69 Hz, processed 236.38 Hz, q_peak 119, batch_avg 463463.1 us
+
+### Documentação atualizada nesta sessão
+- `.github/copilot-instructions.md` revisado para refletir estado atual (ambientes, pipeline, storage e profiling).
+- `.github/agent-instructions.md` criado como versão resumida para uso por outros agentes.
+- `report/phase1_static_metrics.md` atualizado com seção de resultados publicáveis de trace dual-core + atualização do snapshot runtime.
+
+### Pendente para próxima rodada
+- Gerar versão steady-state (warm-up removido) para os 3 perfis (`esp32_prod`, `esp32_prod_fast`, `esp32_demo`) e promover para baseline de publicação.
+- Executar 3+ runs por perfil para estatística de publicação (mean/std/p50/p95).
 
 ## Sessão Atual — Runtime modular + perfis de build (2026-03-11)
 ✅ **COMPLETO**
@@ -43,7 +95,7 @@
 - Redução: **28218 bytes (~9.1%)**.
 
 ## Contexto atual
-- Projeto em PlatformIO com `framework = espidf` no ambiente principal `esp32idf` (ESP-IDF 5.5.3).
+- Projeto em PlatformIO com `framework = espidf` (ESP-IDF 5.5.3) e ambientes ativos: `esp32_prod`, `esp32_prod_fast`, `esp32_prod_stats`, `esp32_systemview`, `esp32_demo`, `native`, `esp32_test`.
 - **Compilador**: GCC 14.2.0 (supports C++11, 14, 17, 20, 23).
 - **C++ Standard**: Atualizado de C++11 para **C++17** ✅
 - Limpeza recente concluída: remoção de artefatos Gitpod/DevContainer e arquivamento de diretórios legados em `archive/`.
@@ -189,7 +241,7 @@ Salvo para quando performance se tornar crítica:
 ### Próximas Ações
 1. Integração com Rcpp como Golden Standard
 2. Ativar testes desabilitados com boundary checks robustos
-3. Validação em esp32idf após sucesso em native
+3. Validação cruzada nos perfis de firmware ativos (`esp32_prod`, `esp32_prod_fast`, `esp32_demo`) após sucesso em `native`
 
 ## Sessão Atual — ESP32 SD + Golden (2026-03-09)
 ✅ **COMPLETO**
@@ -231,4 +283,56 @@ Salvo para quando performance se tornar crítica:
   - `test/README_ESP32_TESTING.md` atualizado para estado real (montagem automática, SDSPI, fallback 8.3, tempos e fluxo atual)
   - `test/TEST_STRATEGY.md` atualizado com baseline atual do golden e estratégia de validação vigente
   - Comentários de cabeçalho em `test/test_mpx_golden.cpp` alinhados com comportamento atual
+
+## Sessão (2026-03-21) — SystemView / App Trace profiling
+✅ **INFRA COMPLETA — análise pendente**
+
+### Objetivo
+Capturar trace dual-core via JTAG/ESP-Prog com SystemView para analisar scheduling e carga de CPU por task (`AcquireSignal`, `ProcessSignal`, `MonitorRuntime`).
+
+### Ambiente criado: `esp32_systemview`
+- `sdkconfig.defaults.systemview` com:
+  - `CONFIG_APPTRACE_DEST_TRAX=y`, `CONFIG_APPTRACE_ENABLE=y`
+  - `CONFIG_APPTRACE_SV_ENABLE=y`, `CONFIG_SYSVIEW_ENABLE=y`
+  - `CONFIG_ESP_INT_WDT`, `CONFIG_ESP_TASK_WDT_EN`, `CONFIG_ESP_TASK_WDT_INIT` todos desativados
+- Build bem-sucedido: 29.2% Flash
+
+### Alterações em `src/main.cpp`
+- Adicionadas guards de compilação condicional para todas as chamadas WDT em `task_process_signal()`:
+  ```cpp
+  #if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+  esp_err_t const wdt_add_ret = esp_task_wdt_add(nullptr);
+  TickType_t last_wdt_reset_tick = xTaskGetTickCount();
+  TickType_t const wdt_reset_period_ticks = pdMS_TO_TICKS(PROCESS_TASK_WDT_RESET_PERIOD_MS);
+  #endif
+  ```
+- `xQueueReceive` usa `portMAX_DELAY` quando WDT desativado.
+- Motivo: linker error `undefined reference to 'esp_task_wdt_add'` ao desativar WDT em sdkconfig.
+
+### Script de captura
+- `scripts/capture_app_trace.ps1` — script PowerShell para captura automática dual-core:
+  - Parâmetros: `-DurationSeconds`, `-BootDelaySeconds`, `-Prefix`, `-OutDir`, `-InterfaceCfg`, `-TargetCfg`, `-AdapterKHz`, `-NoReset`
+  - `-NoReset`: captura sem reiniciar firmware (para pipeline já ativo)
+  - Usa paths absolutos (corrige bug `file://./filename` → `.filename.svdat`)
+  - OpenOCD: `c:\.platformio\packages\tool-openocd-esp32\bin\openocd.exe`
+  - Interface: `interface/ftdi/esp32_devkitj_v1.cfg` (ESP-Prog), Target: `target/esp32.cfg`
+
+### Comportamento do app
+- Boot até pipeline ativo: ~18s (init SD card / signal source)
+- Pipeline steady-state: 249–250 Hz produzido/processado, 0 drops
+- Serial monitor (filtrado): `platformio device monitor -p COM10 -b 115200 --filter time 2>&1 | Select-String -Pattern "Booting false.alarm|Pipeline started|mon:|ALERT"`
+
+### Captura final bem-sucedida
+- Ficheiros: `pipeline_run_core0_20260321_181017.svdat` (42 KB) + `pipeline_run_core1_20260321_181017.svdat` (24 KB)
+- Modo: `-NoReset`, pipeline em steady-state (250 Hz confirmado no serial durante captura)
+- `lost bytes: 0`, 64659 bytes totais @ 1.48 KB/s
+- **Ambos os cores com conteúdo distinto** — prontos para análise
+
+### Pendente (próxima sessão)
+- Abrir os dois `.svdat` em SystemView v3.62c
+- Verificar tasks `AcquireSignal`, `ProcessSignal`, `MonitorRuntime` visíveis na timeline
+- Analisar: CPU load por task, ritmo da queue, tempo de compute por batch
+- Alterar a semântica de `MPX_BATCH_SIZE` em `src/main.cpp`: deixar de significar apenas máximo por chamada e passar a significar mínimo estrito do lote para `ProcessSignal` (processar só quando houver pelo menos `MPX_BATCH_SIZE` amostras acumuladas)
+- Não usar timeout para flush parcial do batch: a decisão atual é privilegiar overhead previsível e batching estrito; se o sistema travar, perder até ~1 s de dados não muda utilmente o diagnóstico
+- Considerar reduzir verbosidade do log no env systemview: adicionar `CONFIG_LOG_DEFAULT_LEVEL=2` a `sdkconfig.defaults.systemview` para suprimir flood de `esp_apptrace: esp_apptrace_read(): enter`
 

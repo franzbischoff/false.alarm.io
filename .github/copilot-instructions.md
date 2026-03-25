@@ -8,37 +8,56 @@
 ## Big picture
 - ESP-IDF 5.5.3/PlatformIO firmware project for streaming matrix-profile analysis on ESP32 hardware.
 - Runtime entrypoint is `src/main.cpp`; processing logic lives in `lib/Mpx` (`Mpx.hpp`/`Mpx.cpp`).
-- The app uses two pinned FreeRTOS tasks with producer/consumer flow:
-  - `task_read_signal` produces `float` samples at `SAMPLING_RATE_HZ`.
-  - `task_compute` consumes samples from a ring buffer and runs `MatrixProfile::Mpx::compute()` + `floss()`.
-- Compile-time macros in `platformio.ini` define algorithm behavior (`WINDOW_SIZE`, `HISTORY_SIZE_S`, `FLOSS_LANDMARK_S`, etc.). Treat these as the primary tuning interface.
+- Runtime pipeline is a producer/consumer design with pinned FreeRTOS tasks:
+  - `task_acquire_signal` acquires samples at `SAMPLING_RATE_HZ`.
+  - `task_process_signal` accumulates a strict batch (`MPX_BATCH_SIZE`) and runs `MatrixProfile::Mpx::compute()` + `floss()`.
+  - `task_monitor` publishes runtime telemetry (`mon:` logs).
+- Compile-time macros in `platformio.ini` are the primary tuning interface (`WINDOW_SIZE`, `HISTORY_SIZE_S`, `MPX_BATCH_SIZE`, queue size, task priorities/cores).
 
 ## Build and test environments
-- **esp32idf** (default): Main firmware for SparkFun ESP32 IoT RedBoard on COM4
-  - Build: `platformio run -e esp32idf`
-  - Upload: `platformio run -e esp32idf -t upload`
-  - Monitor: `platformio device monitor -b 115200`
-- **native**: Desktop x86-64 tests (Unity framework, 20 tests, ~25s)
+- **esp32_prod**: release profile for baseline runtime.
+  - Build: `platformio run -e esp32_prod`
+  - Upload: `platformio run -e esp32_prod -t upload`
+  - Monitor: `platformio device monitor -p COM10 -b 115200 --filter time`
+- **esp32_prod_fast**: speed-focused release (`-O3 -DNDEBUG`).
+  - Build: `platformio run -e esp32_prod_fast`
+  - Upload: `platformio run -e esp32_prod_fast -t upload`
+- **esp32_prod_stats**: release profile with FreeRTOS runtime stats enabled.
+  - Build: `platformio run -e esp32_prod_stats`
+  - Upload: `platformio run -e esp32_prod_stats -t upload`
+- **esp32_systemview**: tracing profile (AppTrace/SystemView instrumentation).
+  - Build: `platformio run -e esp32_systemview`
+  - Upload: `platformio run -e esp32_systemview -t upload`
+- **esp32_demo**: debug-oriented profile.
+  - Build: `platformio run -e esp32_demo`
+  - Upload: `platformio run -e esp32_demo -t upload`
+- **native**: desktop Unity tests.
   - Test: `platformio test -e native`
-- **esp32_test**: Hardware tests with SD card (SDSPI, Unity framework, 20 tests, ~1m44s)
+- **esp32_test**: hardware Unity tests with SD card golden reference.
   - Test: `platformio test -e esp32_test`
-  - Requires SD card with `test_data.csv` and `golden_reference.csv` (FATFS 8.3 names: `TEST_D~1.CSV`, `GOLDEN~1.CSV`)
-  - Default pins: MISO=19, MOSI=23, SCK=18, CS=5
+  - Requires SD card with `test_data.csv` and `golden_reference.csv` (8.3 names accepted: `TEST_D~1.CSV`, `GOLDEN~1.CSV`).
 
 ## Data flow and storage
-- Default build uses `FILE_DATA=1` to read sensor input from LittleFS file `/littlefs/floss.csv`.
-- LittleFS mounted in `app_main()` via `esp_vfs_littlefs_register()` with partition label `littlefs` (`partitions.csv`).
-- Test environment (`esp32_test`) uses SD card via SDSPI for golden reference validation.
-- Vendored component: `components/esp_littlefs` (joltwallet v1.5.0).
-
-
+- Default signal source in current profiles is SD CSV (`SIGNAL_SOURCE_KIND=0`), read through `sd_card_service` + `signal_source_*` backends.
+- Source selection is compile-time (`SIGNAL_SOURCE_KIND`):
+  - `0` = SD CSV
+  - `1` = Analog ADC
+  - `2` = I2C sensor
+- SD/FATFS is the active input path for runtime and golden-reference workflows.
+- LittleFS is not the active storage backend in the current runtime pipeline.
 
 ## Project-specific coding patterns
 - C++17 standard (GCC 14.2.0) with 2-space indentation (`.editorconfig`, `.clang-format`).
-- `lib/Mpx` uses trailing underscores for private members/methods (e.g., `data_buffer_`, `movmean_()`); preserve this convention.
-- RAII with `std::make_unique<T[]>()` for memory safety; avoid dynamic allocations in high-frequency task loops.
-- Global state in embedded paths (task handles, ring buffer, flags) is intentional with explicit analyzer suppressions; do not "clean up" unless requested.
+- `lib/Mpx` uses trailing underscores for private members/methods (for example `data_buffer_`, `movmean_()`); preserve this convention.
+- RAII with `std::make_unique<T[]>()` for memory safety; avoid dynamic allocations inside high-frequency loops.
+- Global state in embedded paths (task handles, queue, runtime counters) is intentional with explicit analyzer suppressions; do not refactor this pattern unless requested.
 - Deterministic behavior: `prune_buffer()` uses sinusoidal pattern; `floss_iac_()` uses analytical Kumaraswamy distribution (not Monte Carlo).
+- Keep batch semantics explicit: process task should not run partial batches unless the user asks for that behavior.
+
+## Profiling and instrumentation notes
+- Runtime telemetry (`mon:`) includes throughput, queue occupancy, batch/e2e latency, and stack/heap indicators.
+- `esp32_prod_stats` and `esp32_systemview` are the preferred profiles for CPU/load and trace analysis.
+- SystemView instrumentation is conditionally compiled with `CONFIG_APPTRACE_SV_ENABLE`; user markers around compute are intentionally guarded for tracing-only builds.
 
 ## Testing strategy
 - Unity framework with 20 tests: 3 functional, 15 robustness, 2 golden reference.
@@ -46,11 +65,15 @@
 - Test files: `test/test_mpx.cpp`, `test/test_mpx_robustness.cpp`, `test/test_mpx_golden.cpp`.
 - Documentation: `test/TEST_STRATEGY.md`, `test/README_ESP32_TESTING.md`.
 
-## Documentation and Communication Style
-- **Markdown Management**: Do not create additional Markdown documentation files without first asking the user. All documentation changes must be made to existing files unless explicitly requested otherwise.
+## Documentation and communication style
+- **Markdown Management**: Do not create additional Markdown documentation files without first asking the user. Prefer updating existing docs.
 - **Writing Style**: Do not use emojis or emoticons in tutorials, documentation, or pedagogical content.
-- **Tone**: Maintain a professional, clean, and academic appearance. Avoid any formatting that suggests automatic AI generation. Use simple, direct, and credible text.
+- **Tone**: Keep text professional, concise, and technically grounded.
 
 ## Quality and checks
-- Static analysis configured in `platformio.ini` (`cppcheck`, `clangtidy`, `pvs-studio`) and `.clang-tidy`.
-- Prefer small, surgical changes in `src/main.cpp` and `lib/Mpx/*`; avoid broad refactors across vendored `components/` unless fixing a dependency directly.
+- Static analysis is configured in `platformio.ini` (`cppcheck`, `clangtidy`, `pvs-studio`) and `.clang-tidy`.
+- Prefer small, surgical changes in `src/main.cpp` and `lib/Mpx/*`.
+- Avoid broad refactors in `components/` unless explicitly required.
+
+## PlatformIO path
+- The PlatformIO binary is located at `C:\\.platformio\\penv\\Scripts\\platformio.exe`.
