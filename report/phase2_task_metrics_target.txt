@@ -1,4 +1,4 @@
-Phase 2 - Task Metrics Target Snapshot
+Phase 2 — Task Metrics Target Snapshot
 Date: 2026-05-05
 
 Sources used:
@@ -16,8 +16,9 @@ Sources used:
 - report/runtime_demo_stats_cpu_summary.txt
 
 Legend:
-- "pendente" means value requires FreeRTOS runtime stats and/or SystemView CSV export.
-- process_signal runtime columns are derived from batch_avg_us.* converted to ms.
+- "pending" marks fields that require a dedicated SystemView CSV export with stable repeated activations.
+- process_signal runtime columns (runtime_mean_ms / p50 / p95) are derived from batch_avg_us measurements converted to ms.
+- activations_per_s_mean reflects proc_hz from serial telemetry (samples processed per second, not task invocations per second; divide by MPX_BATCH_SIZE=128 for ~1.97 invocations/s in prod_o2/o3).
 
 Table 1 - Main target table (by profile/task)
 profile,task,core,priority,cpu_load_mean_pct,cpu_load_p95_pct,activations_per_s_mean,runtime_mean_ms,runtime_p50_ms,runtime_p95_ms,queue_p95,queue_max,drops_total
@@ -25,29 +26,32 @@ prod_os,process_signal,1,3,75.580,76.220,251.70,389.871,390.077,390.264,91.00,96
 prod_o2,process_signal,1,3,47.272,47.518,252.00,241.282,241.282,241.871,0.00,1,0
 prod_o3,process_signal,1,3,47.198,47.453,252.00,241.074,241.073,241.633,0.00,1,0
 demo,process_signal,1,3,92.026,93.398,252.00,479.331,479.565,479.769,117.00,119,0
-prod_os,acquire_signal,0,4,1.341,1.350,250.02,pendente,pendente,pendente,91.00,96,0
-prod_o2,acquire_signal,0,4,1.317,1.320,250.03,pendente,pendente,pendente,0.00,1,0
-prod_o3,acquire_signal,0,4,1.170,1.170,250.03,pendente,pendente,pendente,0.00,1,0
-demo,acquire_signal,0,4,1.341,1.340,250.00,pendente,pendente,pendente,117.00,119,0
-prod_os,monitor,0,1,1.312,1.380,~1.0,pendente,pendente,pendente,91.00,96,0
-prod_o2,monitor,0,1,1.271,1.340,~1.0,pendente,pendente,pendente,0.00,1,0
-prod_o3,monitor,0,1,1.276,1.345,~1.0,pendente,pendente,pendente,0.00,1,0
-demo,monitor,0,1,1.893,1.912,~1.0,pendente,pendente,pendente,117.00,119,0
+prod_os,acquire_signal,0,4,1.341,1.350,250.02,pending,pending,pending,91.00,96,0
+prod_o2,acquire_signal,0,4,1.317,1.320,250.03,pending,pending,pending,0.00,1,0
+prod_o3,acquire_signal,0,4,1.170,1.170,250.03,pending,pending,pending,0.00,1,0
+demo,acquire_signal,0,4,1.341,1.340,250.00,pending,pending,pending,117.00,119,0
+prod_os,monitor,0,1,1.312,1.380,~1.0,pending,pending,pending,91.00,96,0
+prod_o2,monitor,0,1,1.271,1.340,~1.0,pending,pending,pending,0.00,1,0
+prod_o3,monitor,0,1,1.276,1.345,~1.0,pending,pending,pending,0.00,1,0
+demo,monitor,0,1,1.893,1.912,~1.0,pending,pending,pending,117.00,119,0
 
 Table 2 - Algorithmic isolation summary
 profile,mp_floss_runtime_p50_ms,mp_floss_runtime_p95_ms,mp_floss_cpu_share_pct,non_algorithm_cpu_share_pct,interference_index_pct,claim
-prod_os,390.077,390.264,75.580,2.730,3.49,isolado_com_baixa_interferencia
-prod_o2,241.282,241.871,47.272,2.672,5.35,preferido_para_producao
-prod_o3,241.073,241.633,47.198,2.524,5.07,ganho_marginal_vs_o2
-demo,479.565,479.769,92.026,3.234,3.51,confounded_por_overhead_debug
+prod_os,390.077,390.264,75.580,2.730,3.49,isolated_low_interference
+prod_o2,241.282,241.871,47.272,2.672,5.35,preferred_for_production
+prod_o3,241.073,241.633,47.198,2.524,5.07,marginal_gain_vs_o2
+demo,479.565,479.769,92.026,3.234,3.51,confounded_by_debug_overhead
 
 Current conclusions (from available data)
-- prod_o2 and prod_o3 have equivalent throughput and queue behavior.
-- prod_o3 improves batch latency by about 0.09% vs prod_o2 (marginal).
-- prod_o2 remains the best practical production choice.
-- demo has the highest queue pressure and highest batch/e2e latency.
+- prod_o2 and prod_o3 achieve equivalent throughput and queue behavior; prod_o3 reduces mean batch latency by ~0.09% (marginal).
+- prod_o2 is the preferred production profile: -O2 optimisation, zero queue pressure, zero dropped samples.
+- prod_os (Os) raises mean batch latency to ~390 ms and generates substantial queue pressure (p95=91).
+- demo shows the highest batch latency (~479 ms) and queue peak (119), consistent with debug overhead.
+- SystemView tracing was validated after correcting the sdkconfig override: dual-core capture produces real data and confirms process_signal placement on core 1.
+- SystemView data is treated as qualitative confirmation only; final quantitative percentiles are derived from the serial/runtime artifacts listed in Sources.
 
-Pending inputs to complete all fields
-- SystemView CSV export if runtime percentiles are required for acquire_signal and monitor tasks.
+Pending fields
+- runtime_mean_ms / p50 / p95 for acquire_signal and monitor remain pending.
+- These fields are not required to support the Phase 2 conclusion and should be filled only if a future SystemView session yields stable repeated activations for those tasks.
 
 

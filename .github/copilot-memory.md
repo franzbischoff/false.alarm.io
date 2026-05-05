@@ -1,7 +1,34 @@
 # false.alarm.io — Copilot Memory
 
 ## Última atualização
-- Data: 2026-03-25
+- Data: 2026-05-05
+
+## Sessão (2026-05-05) — Encerramento Phase 2 (decisões finais)
+✅ **COMPLETO**
+
+### Decisões finais de análise/publicação
+- Comparação `-O2` vs `-Os` encerrada: `-O2` mantido como baseline de produção por menor `batch_us`/`e2e_us` com `drops=0`.
+- Tabela-alvo de métricas da fase 2 revisada e consolidada em `report/phase2_task_metrics_target.txt`.
+- Campos de runtime percentil para `acquire_signal` e `monitor` permanecem intencionalmente pendentes (não bloqueiam conclusão principal).
+
+### Status SystemView nesta rodada
+- `sdkconfig.esp32_systemview` corrigido e captura dual-core restaurada (arquivos `.svdat` gerados com dados reais).
+- Tentativa adicional com `MPX_BATCH_SIZE=16` executada para aumentar a frequência de ativações visíveis no trace.
+- Decisão do usuário: não usar SystemView como fonte quantitativa final nesta fase.
+- Hipótese de trabalho registrada: perfil de tempo/prioridade de `ProcessSignal` + limitações de banda/buffer do trace prejudicam extração estável de ativações repetidas para percentis.
+
+### Configuração acordada ao final da sessão
+- `MPX_BATCH_SIZE=128` mantido como configuração de referência.
+- Conclusões quantitativas finais permanecem baseadas nos artefatos agregados de serial/runtime:
+  - `report/phase2_runtime_summary.csv`
+  - `report/runtime_*_cpu_summary.txt`
+  - logs `report/runtime_*_capture.log`
+
+### Encerramento do release (2026-05-05)
+- Release atual encerrado com demonstração funcional validada usando sinal lido do cartão SD (`SIGNAL_SOURCE_KIND=0`).
+- Próximos passos acordados para o ciclo seguinte:
+  - Implementar/validar `src/signal_source_analog.cpp` para aquisição de sensores analógicos.
+  - Implementar/validar `src/signal_source_i2c.cpp` para aquisição de sensores I2C (incluindo PPG da SparkFun).
 
 ## Sessão (2026-03-25) — Batch estrito, SystemView e nova baseline runtime
 ✅ **COMPLETO (1 run por perfil coletado)**

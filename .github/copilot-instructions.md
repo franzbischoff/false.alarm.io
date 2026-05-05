@@ -13,6 +13,7 @@
   - `task_process_signal` accumulates a strict batch (`MPX_BATCH_SIZE`) and runs `MatrixProfile::Mpx::compute()` + `floss()`.
   - `task_monitor` publishes runtime telemetry (`mon:` logs).
 - Compile-time macros in `platformio.ini` are the primary tuning interface (`WINDOW_SIZE`, `HISTORY_SIZE_S`, `MPX_BATCH_SIZE`, queue size, task priorities/cores).
+- Current release status: end-to-end functionality is demonstrated and validated using SD-card input (`SIGNAL_SOURCE_KIND=0`).
 
 ## Build and test environments
 - **esp32_prod**: release profile for baseline runtime.
@@ -45,6 +46,9 @@
   - `2` = I2C sensor
 - SD/FATFS is the active input path for runtime and golden-reference workflows.
 - LittleFS is not the active storage backend in the current runtime pipeline.
+- Next release milestone is to use live sensor backends in runtime:
+  - Implement and validate `src/signal_source_analog.cpp` for analog sensor acquisition.
+  - Implement and validate `src/signal_source_i2c.cpp` for I2C sensors (including SparkFun PPG target use cases).
 
 ## Project-specific coding patterns
 - C++17 standard (GCC 14.2.0) with 2-space indentation (`.editorconfig`, `.clang-format`).
@@ -58,6 +62,12 @@
 - Runtime telemetry (`mon:`) includes throughput, queue occupancy, batch/e2e latency, and stack/heap indicators.
 - `esp32_prod_stats` and `esp32_systemview` are the preferred profiles for CPU/load and trace analysis.
 - SystemView instrumentation is conditionally compiled with `CONFIG_APPTRACE_SV_ENABLE`; user markers around compute are intentionally guarded for tracing-only builds.
+- For the current Phase 2 publication closure, final quantitative claims are based on serial/runtime aggregate artifacts (`mon:` + CPU summaries).
+- SystemView remains useful for qualitative validation, but is not the primary quantitative source in the current release baseline.
+
+## Current baseline decisions (2026-05 release closure)
+- Keep `esp32_prod` as the production reference profile with `-O2` selection validated against `-Os`.
+- Keep `MPX_BATCH_SIZE=128` as the baseline runtime configuration.
 
 ## Testing strategy
 - Unity framework with 20 tests: 3 functional, 15 robustness, 2 golden reference.
