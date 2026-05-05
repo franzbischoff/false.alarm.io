@@ -1,0 +1,250 @@
+--- Terminal on COM10 | 115200 8-N-1
+--- Available filters and text transformations: debug, default, direct, esp32_exception_decoder, hexlify, log2file, nocontrol, printable, send_on_enter, time
+--- More details at https://bit.ly/pio-monitor-filters
+--- Quit: Ctrl+C | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+12:33:08.221 > ets Jul 29 2019 12:21:46
+12:33:08.221 >
+12:33:08.221 > rst:0x1 (POWERON_RESET),boot:0x33 (SPI_FAST_FLASH_BOOT)
+12:33:08.221 > configsip: 0, SPIWP:0xee
+12:33:08.237 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+12:33:08.237 > mode:DIO, clock div:1
+12:33:08.237 > load:0x3fff0030,len:6280
+12:33:08.237 > load:0x40078000,len:15864
+12:33:08.237 > load:0x40080400,len:3920
+12:33:08.237 > entry 0x4008063c
+12:33:08.254 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+12:33:08.254 > I (27) boot: compile time Mar 20 2026 19:01:49
+12:33:08.254 > I (28) boot: Multicore bootloader
+12:33:08.254 > I (29) boot: chip revision: v3.1
+12:33:08.271 > I (31) boot.esp32: SPI Speed      : 80MHz
+12:33:08.271 > I (35) boot.esp32: SPI Mode       : DIO
+12:33:08.271 > I (39) boot.esp32: SPI Flash Size : 4MB
+12:33:08.271 > I (42) boot: Enabling RNG early entropy source...
+12:33:08.271 > I (47) boot: Partition Table:
+12:33:08.287 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+12:33:08.287 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+12:33:08.287 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+12:33:08.304 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+12:33:08.304 > I (75) boot: End of partition table
+12:33:08.314 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=0fef4h ( 65268) map
+12:33:08.321 > I (104) esp_image: segment 1: paddr=0001ff1c vaddr=3ffb0000 size=000fch (   252) load
+12:33:08.338 > I (105) esp_image: segment 2: paddr=00020020 vaddr=400d0020 size=24f94h (151444) map
+12:33:08.372 > I (151) esp_image: segment 3: paddr=00044fbc vaddr=3ffb00fc size=02be0h ( 11232) load
+12:33:08.372 > I (155) esp_image: segment 4: paddr=00047ba4 vaddr=40080000 size=0df0ch ( 57100) load
+12:33:08.403 > I (174) esp_image: segment 5: paddr=00055ab8 vaddr=50000000 size=00020h (    32) load
+12:33:08.405 > I (181) boot: Loaded app from partition at offset 0x10000
+12:33:08.414 > I (181) boot: Disabling RNG early entropy source...
+12:33:08.421 > I (202) main: Booting false.alarm production pipeline
+12:33:08.421 > I (202) main: Sampling=250 Hz, window=210, history=5000
+12:33:08.504 > Name: USD
+12:33:08.504 > Type: SDHC
+12:33:08.504 > Speed: 20.00 MHz (limit: 20.00 MHz)
+12:33:08.505 > Size: 59638MB
+12:33:08.505 > CSD: ver=2, sector_size=512, capacity=122138624 read_bl_len=9
+12:33:08.514 > SSR: bus_width=1
+12:33:08.514 > I (281) main: Pipeline started: acquisition(core=0) processing(core=1)
+12:33:08.521 > I (283) main: mon: q_used=1 q_free=499 q_peak=1 produced=1(1.0Hz) processed=0(0.0Hz) dropped=0 batches=0 proc_est=0.00% batch_us(avg/min/max)=0.0/4294967295/0 e2e_us(avg/min/max)=0.0/4294967295/0 stack(acq/proc/mon)=6152/15164/5476 heap8_free=62684 heap8_largest=34816
+12:33:10.037 > I (1807) main: mon: q_used=0 q_free=500 q_peak=1 produced=382(249.7Hz) processed=256(167.8Hz) dropped=0 batches=2 proc_est=51.53% batch_us(avg/min/max)=393207.5/390971/395444 e2e_us(avg/min/max)=393231.0/390995/395467 stack(acq/proc/mon)=6152/14748/4100 heap8_free=62444 heap8_largest=34816
+12:33:11.551 > I (3323) main: mon: q_used=0 q_free=500 q_peak=1 produced=761(250.0Hz) processed=640(253.3Hz) dropped=0 batches=5 proc_est=77.06% batch_us(avg/min/max)=389430.7/389378/395444 e2e_us(avg/min/max)=389454.0/389402/395467 stack(acq/proc/mon)=6152/14748/4100 heap8_free=62444 heap8_largest=34816
+12:33:13.068 > I (4839) main: mon: q_used=0 q_free=500 q_peak=1 produced=1140(250.0Hz) processed=1024(253.3Hz) dropped=0 batches=8 proc_est=76.99% batch_us(avg/min/max)=389079.0/389061/395444 e2e_us(avg/min/max)=389102.0/389084/395467 stack(acq/proc/mon)=6152/14748/4100 heap8_free=62444 heap8_largest=34816
+12:33:13.084 > I (4858) main: cpu: acq=1.35% proc=71.15% mon=1.50% idle0=96.38% idle1=28.75% other=0.67% total_ticks=4658044 tasks=8
+12:33:14.584 > I (6366) main: mon: q_used=0 q_free=500 q_peak=1 produced=1522(250.2Hz) processed=1408(251.5Hz) dropped=0 batches=11 proc_est=76.45% batch_us(avg/min/max)=389143.0/389061/395444 e2e_us(avg/min/max)=389166.0/389084/395467 stack(acq/proc/mon)=6152/14748/3092 heap8_free=62444 heap8_largest=34816
+12:33:16.113 > I (7882) main: mon: q_used=0 q_free=500 q_peak=1 produced=1901(250.0Hz) processed=1792(253.3Hz) dropped=0 batches=14 proc_est=77.01% batch_us(avg/min/max)=389158.7/389045/395444 e2e_us(avg/min/max)=389181.7/389068/395467 stack(acq/proc/mon)=6152/14748/3092 heap8_free=62444 heap8_largest=34816
+12:33:17.629 > I (9398) main: mon: q_used=0 q_free=500 q_peak=1 produced=2280(250.0Hz) processed=2176(253.3Hz) dropped=0 batches=17 proc_est=77.01% batch_us(avg/min/max)=389158.3/389045/395444 e2e_us(avg/min/max)=389181.3/389068/395467 stack(acq/proc/mon)=6152/14748/3092 heap8_free=62444 heap8_largest=34816
+12:33:19.145 > I (10914) main: mon: q_used=0 q_free=500 q_peak=1 produced=2659(250.0Hz) processed=2560(253.3Hz) dropped=0 batches=20 proc_est=77.04% batch_us(avg/min/max)=389296.0/389045/395444 e2e_us(avg/min/max)=389319.3/389068/395467 stack(acq/proc/mon)=6152/14748/3092 heap8_free=62444 heap8_largest=34816
+12:33:19.165 > I (10933) main: cpu: acq=1.35% proc=74.50% mon=1.38% idle0=96.95% idle1=25.45% other=0.29% total_ticks=10733045 tasks=8
+12:33:20.660 > I (12441) main: mon: q_used=97 q_free=403 q_peak=97 produced=3041(250.2Hz) processed=2816(167.6Hz) dropped=0 batches=22 proc_est=51.01% batch_us(avg/min/max)=389436.5/389045/395444 e2e_us(avg/min/max)=389459.5/389068/395467 stack(acq/proc/mon)=6152/14748/3092 heap8_free=62444 heap8_largest=34816
+12:33:21.177 > W (12955) main: ALERT: floss[4371]=0.43527 <= 0.45000 (ts=12364897)
+12:33:21.693 > W (13465) main: ALERT: floss[4371]=0.34426 <= 0.45000 (ts=12875533)
+12:33:22.180 > I (13958) main: mon: q_used=92 q_free=408 q_peak=97 produced=3420(249.8Hz) processed=3200(253.1Hz) dropped=0 batches=25 proc_est=77.04% batch_us(avg/min/max)=389581.0/389045/395444 e2e_us(avg/min/max)=389604.0/389068/395467 stack(acq/proc/mon)=6152/13948/3092 heap8_free=62224 heap8_largest=34816
+12:33:22.206 > W (13979) main: ALERT: floss[4371]=0.34030 <= 0.45000 (ts=13388829)
+12:33:23.706 > I (15475) main: mon: q_used=87 q_free=413 q_peak=97 produced=3799(249.8Hz) processed=3584(253.1Hz) dropped=0 batches=28 proc_est=77.09% batch_us(avg/min/max)=389819.7/389045/395444 e2e_us(avg/min/max)=389843.3/389068/395467 stack(acq/proc/mon)=6152/13948/3092 heap8_free=62224 heap8_largest=34816
+12:33:25.222 > I (16992) main: mon: q_used=83 q_free=417 q_peak=97 produced=4179(250.5Hz) processed=3968(253.1Hz) dropped=0 batches=31 proc_est=77.13% batch_us(avg/min/max)=390010.7/389045/395444 e2e_us(avg/min/max)=390033.7/389068/395467 stack(acq/proc/mon)=6152/13948/3092 heap8_free=62224 heap8_largest=34816
+12:33:25.249 > I (17011) main: cpu: acq=1.35% proc=73.15% mon=1.35% idle0=97.11% idle1=24.75% other=0.19% total_ticks=16811082 tasks=8
+12:33:26.738 > I (18519) main: mon: q_used=80 q_free=420 q_peak=97 produced=4560(249.5Hz) processed=4352(251.5Hz) dropped=0 batches=34 proc_est=76.80% batch_us(avg/min/max)=390904.0/389045/395444 e2e_us(avg/min/max)=390927.0/389068/395467 stack(acq/proc/mon)=6152/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:28.265 > I (20036) main: mon: q_used=76 q_free=424 q_peak=97 produced=4940(250.5Hz) processed=4736(253.1Hz) dropped=0 batches=37 proc_est=77.15% batch_us(avg/min/max)=390132.0/389045/395444 e2e_us(avg/min/max)=390155.0/389068/395467 stack(acq/proc/mon)=6152/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:29.784 > I (21553) main: mon: q_used=71 q_free=429 q_peak=97 produced=5319(249.8Hz) processed=5120(253.1Hz) dropped=0 batches=40 proc_est=77.14% batch_us(avg/min/max)=390056.7/389045/395444 e2e_us(avg/min/max)=390079.7/389068/395467 stack(acq/proc/mon)=6152/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:31.301 > I (23070) main: mon: q_used=66 q_free=434 q_peak=97 produced=5698(249.8Hz) processed=5504(253.1Hz) dropped=0 batches=43 proc_est=77.17% batch_us(avg/min/max)=390232.3/389045/395444 e2e_us(avg/min/max)=390255.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:31.326 > I (23089) main: cpu: acq=1.34% proc=74.24% mon=1.32% idle0=97.18% idle1=24.51% other=0.14% total_ticks=22889054 tasks=8
+12:33:32.819 > I (24597) main: mon: q_used=64 q_free=436 q_peak=97 produced=6080(250.2Hz) processed=5888(251.5Hz) dropped=0 batches=46 proc_est=76.82% batch_us(avg/min/max)=390989.7/389045/395444 e2e_us(avg/min/max)=391012.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:34.339 > I (26114) main: mon: q_used=59 q_free=441 q_peak=97 produced=6459(249.8Hz) processed=6272(253.1Hz) dropped=0 batches=49 proc_est=77.16% batch_us(avg/min/max)=390194.0/389045/395444 e2e_us(avg/min/max)=390217.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:35.855 > I (27631) main: mon: q_used=54 q_free=446 q_peak=97 produced=6838(249.8Hz) processed=6656(253.1Hz) dropped=0 batches=52 proc_est=77.16% batch_us(avg/min/max)=390189.3/389045/395444 e2e_us(avg/min/max)=390212.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:37.379 > I (29148) main: mon: q_used=50 q_free=450 q_peak=97 produced=7218(250.5Hz) processed=7040(253.1Hz) dropped=0 batches=55 proc_est=77.16% batch_us(avg/min/max)=390175.3/389045/395444 e2e_us(avg/min/max)=390198.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:37.397 > I (29167) main: cpu: acq=1.34% proc=74.88% mon=1.32% idle0=97.22% idle1=24.36% other=0.11% total_ticks=28967043 tasks=8
+12:33:38.902 > I (30675) main: mon: q_used=47 q_free=453 q_peak=97 produced=7599(249.5Hz) processed=7424(251.5Hz) dropped=0 batches=58 proc_est=76.80% batch_us(avg/min/max)=390915.3/389045/395444 e2e_us(avg/min/max)=390938.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:39.617 > W (31387) main: ALERT: floss[4371]=0.37789 <= 0.45000 (ts=30796851)
+12:33:40.127 > W (31897) main: ALERT: floss[4371]=0.35613 <= 0.45000 (ts=31307533)
+12:33:40.421 > I (32192) main: mon: q_used=43 q_free=457 q_peak=97 produced=7979(250.5Hz) processed=7808(253.1Hz) dropped=0 batches=61 proc_est=77.14% batch_us(avg/min/max)=390072.7/389045/395444 e2e_us(avg/min/max)=390095.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:41.936 > I (33709) main: mon: q_used=38 q_free=462 q_peak=97 produced=8358(249.8Hz) processed=8192(253.1Hz) dropped=0 batches=64 proc_est=77.13% batch_us(avg/min/max)=390045.7/389045/395444 e2e_us(avg/min/max)=390069.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:43.448 > I (35226) main: mon: q_used=33 q_free=467 q_peak=97 produced=8737(249.8Hz) processed=8576(253.1Hz) dropped=0 batches=67 proc_est=77.14% batch_us(avg/min/max)=390058.3/389045/395444 e2e_us(avg/min/max)=390081.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:43.482 > I (35245) main: cpu: acq=1.34% proc=75.29% mon=1.30% idle0=97.25% idle1=24.27% other=0.09% total_ticks=35045045 tasks=8
+12:33:44.737 > W (36507) main: ALERT: floss[4371]=0.41350 <= 0.45000 (ts=35916825)
+12:33:44.980 > I (36753) main: mon: q_used=31 q_free=469 q_peak=97 produced=9119(250.2Hz) processed=8960(251.5Hz) dropped=0 batches=70 proc_est=76.81% batch_us(avg/min/max)=390957.7/389045/395444 e2e_us(avg/min/max)=390981.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:45.243 > W (37018) main: ALERT: floss[4371]=0.30568 <= 0.45000 (ts=36427533)
+12:33:45.756 > W (37531) main: ALERT: floss[4371]=0.24434 <= 0.45000 (ts=36940825)
+12:33:46.272 > W (38042) main: ALERT: floss[4371]=0.39372 <= 0.45000 (ts=37451533)
+12:33:46.489 > I (38270) main: mon: q_used=26 q_free=474 q_peak=97 produced=9498(249.8Hz) processed=9344(253.1Hz) dropped=0 batches=73 proc_est=77.17% batch_us(avg/min/max)=390234.0/389045/395444 e2e_us(avg/min/max)=390257.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:48.012 > I (39787) main: mon: q_used=21 q_free=479 q_peak=97 produced=9877(249.8Hz) processed=9728(253.1Hz) dropped=0 batches=76 proc_est=77.17% batch_us(avg/min/max)=390201.0/389045/395444 e2e_us(avg/min/max)=390224.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:48.304 > W (40090) main: ALERT: floss[4371]=0.31458 <= 0.45000 (ts=39499533)
+12:33:48.828 > W (40603) main: ALERT: floss[4371]=0.36404 <= 0.45000 (ts=40012825)
+12:33:49.533 > I (41304) main: mon: q_used=17 q_free=483 q_peak=97 produced=10257(250.5Hz) processed=10112(253.1Hz) dropped=0 batches=79 proc_est=77.18% batch_us(avg/min/max)=390253.7/389045/395444 e2e_us(avg/min/max)=390277.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:49.553 > I (41323) main: cpu: acq=1.34% proc=75.59% mon=1.31% idle0=97.27% idle1=24.20% other=0.08% total_ticks=41123218 tasks=8
+12:33:50.355 > W (42138) main: ALERT: floss[4371]=0.40955 <= 0.45000 (ts=41547533)
+12:33:51.062 > I (42831) main: mon: q_used=14 q_free=486 q_peak=97 produced=10638(249.5Hz) processed=10496(251.5Hz) dropped=0 batches=82 proc_est=76.82% batch_us(avg/min/max)=391035.0/389045/395444 e2e_us(avg/min/max)=391058.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:52.569 > I (44348) main: mon: q_used=10 q_free=490 q_peak=97 produced=11018(250.5Hz) processed=10880(253.1Hz) dropped=0 batches=85 proc_est=77.17% batch_us(avg/min/max)=390245.7/389045/395444 e2e_us(avg/min/max)=390269.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:54.097 > I (45865) main: mon: q_used=5 q_free=495 q_peak=97 produced=11397(249.8Hz) processed=11264(253.1Hz) dropped=0 batches=88 proc_est=77.17% batch_us(avg/min/max)=390208.7/389045/395444 e2e_us(avg/min/max)=390232.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:55.605 > I (47382) main: mon: q_used=0 q_free=500 q_peak=97 produced=11776(249.8Hz) processed=11648(253.1Hz) dropped=0 batches=91 proc_est=77.18% batch_us(avg/min/max)=390252.3/389045/395444 e2e_us(avg/min/max)=390275.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:55.631 > I (47401) main: cpu: acq=1.34% proc=75.81% mon=1.30% idle0=97.28% idle1=24.14% other=0.07% total_ticks=47201131 tasks=8
+12:33:57.140 > I (48909) main: mon: q_used=0 q_free=500 q_peak=97 produced=12158(250.2Hz) processed=12032(251.5Hz) dropped=0 batches=94 proc_est=76.80% batch_us(avg/min/max)=390934.7/389045/395444 e2e_us(avg/min/max)=390958.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:33:58.656 > I (50426) main: mon: q_used=0 q_free=500 q_peak=97 produced=12537(249.8Hz) processed=12416(253.1Hz) dropped=0 batches=97 proc_est=77.16% batch_us(avg/min/max)=390186.3/389045/395444 e2e_us(avg/min/max)=390209.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:00.162 > I (51943) main: mon: q_used=0 q_free=500 q_peak=97 produced=12916(249.8Hz) processed=12800(253.1Hz) dropped=0 batches=100 proc_est=77.15% batch_us(avg/min/max)=390126.0/389045/395444 e2e_us(avg/min/max)=390149.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:01.692 > I (53460) main: mon: q_used=0 q_free=500 q_peak=97 produced=13296(250.5Hz) processed=13184(253.1Hz) dropped=0 batches=103 proc_est=77.14% batch_us(avg/min/max)=390088.0/389045/395444 e2e_us(avg/min/max)=390111.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:01.717 > I (53479) main: cpu: acq=1.34% proc=75.97% mon=1.30% idle0=97.29% idle1=24.02% other=0.06% total_ticks=53279229 tasks=8
+12:34:03.216 > I (54987) main: mon: q_used=0 q_free=500 q_peak=97 produced=13677(249.5Hz) processed=13568(251.5Hz) dropped=0 batches=106 proc_est=76.60% batch_us(avg/min/max)=389894.0/389045/395444 e2e_us(avg/min/max)=389917.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:04.731 > I (56504) main: mon: q_used=0 q_free=500 q_peak=97 produced=14057(250.5Hz) processed=13952(253.1Hz) dropped=0 batches=109 proc_est=77.05% batch_us(avg/min/max)=389610.3/389045/395444 e2e_us(avg/min/max)=389633.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:06.248 > I (58021) main: mon: q_used=0 q_free=500 q_peak=97 produced=14436(249.8Hz) processed=14336(253.1Hz) dropped=0 batches=112 proc_est=77.03% batch_us(avg/min/max)=389498.0/389045/395444 e2e_us(avg/min/max)=389521.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:07.765 > I (59538) main: mon: q_used=95 q_free=405 q_peak=97 produced=14815(249.8Hz) processed=14592(168.8Hz) dropped=0 batches=114 proc_est=51.36% batch_us(avg/min/max)=389533.0/389045/395444 e2e_us(avg/min/max)=389556.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:07.794 > I (59557) main: cpu: acq=1.34% proc=76.09% mon=1.30% idle0=97.30% idle1=23.90% other=0.05% total_ticks=59357278 tasks=8
+12:34:09.294 > I (61065) main: mon: q_used=93 q_free=407 q_peak=97 produced=15197(250.2Hz) processed=14976(251.5Hz) dropped=0 batches=117 proc_est=76.50% batch_us(avg/min/max)=389378.0/389045/395444 e2e_us(avg/min/max)=389401.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:10.814 > I (62582) main: mon: q_used=88 q_free=412 q_peak=97 produced=15576(249.8Hz) processed=15360(253.1Hz) dropped=0 batches=120 proc_est=76.99% batch_us(avg/min/max)=389325.3/389045/395444 e2e_us(avg/min/max)=389348.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:12.330 > I (64099) main: mon: q_used=83 q_free=417 q_peak=97 produced=15955(249.8Hz) processed=15744(253.1Hz) dropped=0 batches=123 proc_est=77.00% batch_us(avg/min/max)=389383.3/389045/395444 e2e_us(avg/min/max)=389406.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:13.848 > I (65616) main: mon: q_used=79 q_free=421 q_peak=97 produced=16335(250.5Hz) processed=16128(253.1Hz) dropped=0 batches=126 proc_est=77.02% batch_us(avg/min/max)=389482.7/389045/395444 e2e_us(avg/min/max)=389505.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:13.873 > I (65635) main: cpu: acq=1.34% proc=75.59% mon=1.30% idle0=97.31% idle1=23.90% other=0.05% total_ticks=65435303 tasks=8
+12:34:15.375 > I (67143) main: mon: q_used=76 q_free=424 q_peak=97 produced=16716(249.5Hz) processed=16512(251.5Hz) dropped=0 batches=129 proc_est=76.66% batch_us(avg/min/max)=390205.7/389045/395444 e2e_us(avg/min/max)=390228.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:16.892 > I (68660) main: mon: q_used=72 q_free=428 q_peak=97 produced=17096(250.5Hz) processed=16896(253.1Hz) dropped=0 batches=132 proc_est=76.98% batch_us(avg/min/max)=389278.7/389045/395444 e2e_us(avg/min/max)=389301.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:18.015 > W (69785) main: ALERT: floss[4371]=0.42340 <= 0.45000 (ts=69195533)
+12:34:18.409 > I (70177) main: mon: q_used=67 q_free=433 q_peak=97 produced=17475(249.8Hz) processed=17280(253.1Hz) dropped=0 batches=135 proc_est=76.96% batch_us(avg/min/max)=389174.7/389045/395444 e2e_us(avg/min/max)=389198.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:19.039 > W (70809) main: ALERT: floss[4371]=0.43329 <= 0.45000 (ts=70219533)
+12:34:19.926 > I (71694) main: mon: q_used=62 q_free=438 q_peak=97 produced=17854(249.8Hz) processed=17664(253.1Hz) dropped=0 batches=138 proc_est=77.05% batch_us(avg/min/max)=389600.7/389045/395444 e2e_us(avg/min/max)=389624.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:19.950 > I (71713) main: cpu: acq=1.34% proc=75.72% mon=1.30% idle0=97.31% idle1=23.90% other=0.04% total_ticks=71513313 tasks=8
+12:34:21.452 > I (73221) main: mon: q_used=60 q_free=440 q_peak=97 produced=18236(250.2Hz) processed=18048(251.5Hz) dropped=0 batches=141 proc_est=76.77% batch_us(avg/min/max)=390750.0/389045/395444 e2e_us(avg/min/max)=390773.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:22.961 > I (74738) main: mon: q_used=55 q_free=445 q_peak=97 produced=18615(249.8Hz) processed=18432(253.1Hz) dropped=0 batches=144 proc_est=77.14% batch_us(avg/min/max)=390079.7/389045/395444 e2e_us(avg/min/max)=390103.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:24.478 > I (76255) main: mon: q_used=50 q_free=450 q_peak=97 produced=18994(249.8Hz) processed=18816(253.1Hz) dropped=0 batches=147 proc_est=77.15% batch_us(avg/min/max)=390098.0/389045/395444 e2e_us(avg/min/max)=390121.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:25.182 > W (76953) main: ALERT: floss[4371]=0.43527 <= 0.45000 (ts=76363533)
+12:34:26.003 > I (77772) main: mon: q_used=46 q_free=454 q_peak=97 produced=19374(250.5Hz) processed=19200(253.1Hz) dropped=0 batches=150 proc_est=77.11% batch_us(avg/min/max)=389906.0/389045/395444 e2e_us(avg/min/max)=389929.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:26.028 > I (77791) main: cpu: acq=1.34% proc=75.84% mon=1.30% idle0=97.32% idle1=23.90% other=0.04% total_ticks=77591306 tasks=8
+12:34:27.223 > W (79002) main: ALERT: floss[4371]=0.44219 <= 0.45000 (ts=78411533)
+12:34:27.526 > I (79299) main: mon: q_used=43 q_free=457 q_peak=97 produced=19755(249.5Hz) processed=19584(251.5Hz) dropped=0 batches=153 proc_est=76.72% batch_us(avg/min/max)=390514.7/389045/395444 e2e_us(avg/min/max)=390537.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:27.738 > W (79515) main: ALERT: floss[4371]=0.25028 <= 0.45000 (ts=78924827)
+12:34:28.255 > W (80026) main: ALERT: floss[4371]=0.37789 <= 0.45000 (ts=79435533)
+12:34:28.759 > W (80539) main: ALERT: floss[4371]=0.43725 <= 0.45000 (ts=79948829)
+12:34:29.040 > I (80816) main: mon: q_used=39 q_free=461 q_peak=97 produced=20135(250.5Hz) processed=19968(253.1Hz) dropped=0 batches=156 proc_est=77.15% batch_us(avg/min/max)=390107.7/389045/395444 e2e_us(avg/min/max)=390131.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:30.554 > I (82333) main: mon: q_used=34 q_free=466 q_peak=97 produced=20514(249.8Hz) processed=20352(253.1Hz) dropped=0 batches=159 proc_est=77.14% batch_us(avg/min/max)=390063.7/389045/395444 e2e_us(avg/min/max)=390086.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:31.838 > W (83611) main: ALERT: floss[4371]=0.41746 <= 0.45000 (ts=83020827)
+12:34:32.078 > I (83850) main: mon: q_used=29 q_free=471 q_peak=97 produced=20893(249.8Hz) processed=20736(253.1Hz) dropped=0 batches=162 proc_est=77.16% batch_us(avg/min/max)=390178.3/389045/395444 e2e_us(avg/min/max)=390201.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:32.102 > I (83869) main: cpu: acq=1.34% proc=75.94% mon=1.29% idle0=97.32% idle1=23.89% other=0.04% total_ticks=83669313 tasks=8
+12:34:33.367 > W (85146) main: ALERT: floss[4371]=0.43131 <= 0.45000 (ts=84555533)
+12:34:33.604 > I (85377) main: mon: q_used=27 q_free=473 q_peak=97 produced=21275(250.2Hz) processed=21120(251.5Hz) dropped=0 batches=165 proc_est=76.78% batch_us(avg/min/max)=390801.0/389045/395444 e2e_us(avg/min/max)=390824.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:35.126 > I (86894) main: mon: q_used=22 q_free=478 q_peak=97 produced=21654(249.8Hz) processed=21504(253.1Hz) dropped=0 batches=168 proc_est=77.17% batch_us(avg/min/max)=390230.3/389045/395444 e2e_us(avg/min/max)=390254.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:36.643 > I (88411) main: mon: q_used=17 q_free=483 q_peak=97 produced=22033(249.8Hz) processed=21888(253.1Hz) dropped=0 batches=171 proc_est=77.14% batch_us(avg/min/max)=390051.0/389045/395444 e2e_us(avg/min/max)=390074.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:38.151 > I (89928) main: mon: q_used=13 q_free=487 q_peak=97 produced=22413(250.5Hz) processed=22272(253.1Hz) dropped=0 batches=174 proc_est=77.15% batch_us(avg/min/max)=390142.3/389045/395444 e2e_us(avg/min/max)=390165.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:38.179 > I (89947) main: cpu: acq=1.34% proc=76.03% mon=1.30% idle0=97.32% idle1=23.89% other=0.04% total_ticks=89747307 tasks=8
+12:34:39.685 > I (91455) main: mon: q_used=10 q_free=490 q_peak=97 produced=22794(249.5Hz) processed=22656(251.5Hz) dropped=0 batches=177 proc_est=76.71% batch_us(avg/min/max)=390446.3/389045/395444 e2e_us(avg/min/max)=390469.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:41.190 > I (92972) main: mon: q_used=6 q_free=494 q_peak=97 produced=23174(250.5Hz) processed=23040(253.1Hz) dropped=0 batches=180 proc_est=77.09% batch_us(avg/min/max)=389827.0/389045/395444 e2e_us(avg/min/max)=389850.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:42.708 > I (94489) main: mon: q_used=1 q_free=499 q_peak=97 produced=23553(249.8Hz) processed=23424(253.1Hz) dropped=0 batches=183 proc_est=77.11% batch_us(avg/min/max)=389917.3/389045/395444 e2e_us(avg/min/max)=389940.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:44.225 > I (96006) main: mon: q_used=0 q_free=500 q_peak=97 produced=23932(249.8Hz) processed=23808(253.1Hz) dropped=0 batches=186 proc_est=77.09% batch_us(avg/min/max)=389816.3/389045/395444 e2e_us(avg/min/max)=389840.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:44.256 > I (96025) main: cpu: acq=1.34% proc=76.10% mon=1.30% idle0=97.33% idle1=23.89% other=0.03% total_ticks=95825226 tasks=8
+12:34:45.751 > I (97533) main: mon: q_used=0 q_free=500 q_peak=97 produced=24314(250.2Hz) processed=24192(251.5Hz) dropped=0 batches=189 proc_est=76.76% batch_us(avg/min/max)=390686.0/389045/395444 e2e_us(avg/min/max)=390709.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:47.277 > I (99050) main: mon: q_used=0 q_free=500 q_peak=97 produced=24693(249.8Hz) processed=24576(253.1Hz) dropped=0 batches=192 proc_est=77.15% batch_us(avg/min/max)=390105.3/389045/395444 e2e_us(avg/min/max)=390128.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:48.798 > I (100567) main: mon: q_used=0 q_free=500 q_peak=97 produced=25072(249.8Hz) processed=24960(253.1Hz) dropped=0 batches=195 proc_est=77.15% batch_us(avg/min/max)=390115.0/389045/395444 e2e_us(avg/min/max)=390138.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:49.250 > W (101019) main: ALERT: floss[4371]=0.40460 <= 0.45000 (ts=100428904)
+12:34:49.754 > W (101530) main: ALERT: floss[4371]=0.30469 <= 0.45000 (ts=100939533)
+12:34:50.273 > W (102043) main: ALERT: floss[4371]=0.20279 <= 0.45000 (ts=101452827)
+12:34:50.304 > I (102084) main: mon: q_used=0 q_free=500 q_peak=97 produced=25452(250.5Hz) processed=25344(253.1Hz) dropped=0 batches=198 proc_est=77.14% batch_us(avg/min/max)=390089.7/389045/395444 e2e_us(avg/min/max)=390113.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:50.338 > I (102103) main: cpu: acq=1.34% proc=76.17% mon=1.30% idle0=97.33% idle1=23.82% other=0.03% total_ticks=101903298 tasks=8
+12:34:50.773 > W (102554) main: ALERT: floss[4371]=0.22950 <= 0.45000 (ts=101963547)
+12:34:51.288 > W (103067) main: ALERT: floss[4371]=0.39174 <= 0.45000 (ts=102476827)
+12:34:51.837 > I (103612) main: mon: q_used=0 q_free=500 q_peak=97 produced=25834(250.0Hz) processed=25728(251.3Hz) dropped=0 batches=201 proc_est=76.61% batch_us(avg/min/max)=390198.0/389045/395444 e2e_us(avg/min/max)=390221.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:53.352 > I (105129) main: mon: q_used=0 q_free=500 q_peak=97 produced=26213(249.8Hz) processed=26112(253.1Hz) dropped=0 batches=204 proc_est=77.17% batch_us(avg/min/max)=390215.7/389045/395444 e2e_us(avg/min/max)=390239.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:54.874 > I (106646) main: mon: q_used=96 q_free=404 q_peak=97 produced=26592(249.8Hz) processed=26368(168.8Hz) dropped=0 batches=206 proc_est=51.44% batch_us(avg/min/max)=390176.0/389045/395444 e2e_us(avg/min/max)=390199.5/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:56.382 > I (108163) main: mon: q_used=91 q_free=409 q_peak=97 produced=26971(249.8Hz) processed=26752(253.1Hz) dropped=0 batches=209 proc_est=77.17% batch_us(avg/min/max)=390210.7/389045/395444 e2e_us(avg/min/max)=390233.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:56.415 > I (108182) main: cpu: acq=1.34% proc=75.87% mon=1.30% idle0=97.33% idle1=23.77% other=0.03% total_ticks=107982402 tasks=8
+12:34:56.916 > W (108698) main: ALERT: floss[4371]=0.43329 <= 0.45000 (ts=108107533)
+12:34:57.441 > W (109211) main: ALERT: floss[4371]=0.33140 <= 0.45000 (ts=108620827)
+12:34:57.923 > I (109691) main: mon: q_used=89 q_free=411 q_peak=97 produced=27353(250.0Hz) processed=27136(251.3Hz) dropped=0 batches=212 proc_est=76.73% batch_us(avg/min/max)=390817.7/389045/395444 e2e_us(avg/min/max)=390841.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:34:57.952 > W (109722) main: ALERT: floss[4371]=0.24731 <= 0.45000 (ts=109131533)
+12:34:58.464 > W (110235) main: ALERT: floss[4371]=0.24830 <= 0.45000 (ts=109644890)
+12:34:58.976 > W (110746) main: ALERT: floss[4371]=0.31854 <= 0.45000 (ts=110155533)
+12:34:59.430 > I (111208) main: mon: q_used=84 q_free=416 q_peak=97 produced=27732(249.8Hz) processed=27520(253.1Hz) dropped=0 batches=215 proc_est=77.17% batch_us(avg/min/max)=390199.3/389045/395444 e2e_us(avg/min/max)=390222.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:00.958 > I (112726) main: mon: q_used=80 q_free=420 q_peak=97 produced=28112(250.3Hz) processed=27904(253.0Hz) dropped=0 batches=218 proc_est=77.13% batch_us(avg/min/max)=390254.0/389045/395444 e2e_us(avg/min/max)=390277.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:02.463 > I (114243) main: mon: q_used=75 q_free=425 q_peak=97 produced=28491(249.8Hz) processed=28288(253.1Hz) dropped=0 batches=221 proc_est=77.17% batch_us(avg/min/max)=390245.7/389045/395444 e2e_us(avg/min/max)=390269.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:02.496 > I (114262) main: cpu: acq=1.34% proc=75.95% mon=1.30% idle0=97.33% idle1=23.77% other=0.03% total_ticks=114062403 tasks=8
+12:35:03.994 > I (115771) main: mon: q_used=73 q_free=427 q_peak=97 produced=28873(250.0Hz) processed=28672(251.3Hz) dropped=0 batches=224 proc_est=76.72% batch_us(avg/min/max)=390778.3/389045/395444 e2e_us(avg/min/max)=390802.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:05.520 > I (117288) main: mon: q_used=69 q_free=431 q_peak=97 produced=29253(250.5Hz) processed=29056(253.1Hz) dropped=0 batches=227 proc_est=77.18% batch_us(avg/min/max)=390263.7/389045/395444 e2e_us(avg/min/max)=390287.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:07.030 > I (118805) main: mon: q_used=64 q_free=436 q_peak=97 produced=29632(249.8Hz) processed=29440(253.1Hz) dropped=0 batches=230 proc_est=77.18% batch_us(avg/min/max)=390290.0/389045/395444 e2e_us(avg/min/max)=390313.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:08.544 > I (120322) main: mon: q_used=59 q_free=441 q_peak=97 produced=30011(249.8Hz) processed=29824(253.1Hz) dropped=0 batches=233 proc_est=77.16% batch_us(avg/min/max)=390196.3/389045/395444 e2e_us(avg/min/max)=390219.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:08.574 > I (120342) main: cpu: acq=1.34% proc=76.01% mon=1.30% idle0=97.33% idle1=23.77% other=0.03% total_ticks=120141402 tasks=8
+12:35:10.082 > I (121850) main: mon: q_used=57 q_free=443 q_peak=97 produced=30393(250.0Hz) processed=30208(251.3Hz) dropped=0 batches=236 proc_est=76.74% batch_us(avg/min/max)=390839.3/389045/395444 e2e_us(avg/min/max)=390863.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:11.599 > I (123367) main: mon: q_used=52 q_free=448 q_peak=97 produced=30772(249.8Hz) processed=30592(253.1Hz) dropped=0 batches=239 proc_est=77.17% batch_us(avg/min/max)=390222.0/389045/395444 e2e_us(avg/min/max)=390245.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:13.113 > I (124884) main: mon: q_used=48 q_free=452 q_peak=97 produced=31152(250.5Hz) processed=30976(253.1Hz) dropped=0 batches=242 proc_est=77.17% batch_us(avg/min/max)=390226.7/389045/395444 e2e_us(avg/min/max)=390249.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:14.633 > I (126401) main: mon: q_used=43 q_free=457 q_peak=97 produced=31531(249.8Hz) processed=31360(253.1Hz) dropped=0 batches=245 proc_est=77.17% batch_us(avg/min/max)=390228.7/389045/395444 e2e_us(avg/min/max)=390251.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:14.655 > I (126420) main: cpu: acq=1.34% proc=76.07% mon=1.30% idle0=97.33% idle1=23.77% other=0.02% total_ticks=126220355 tasks=8
+12:35:16.161 > I (127929) main: mon: q_used=41 q_free=459 q_peak=97 produced=31913(250.0Hz) processed=31744(251.3Hz) dropped=0 batches=248 proc_est=76.71% batch_us(avg/min/max)=390717.7/389045/395444 e2e_us(avg/min/max)=390741.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:17.669 > I (129446) main: mon: q_used=36 q_free=464 q_peak=97 produced=32292(249.8Hz) processed=32128(253.1Hz) dropped=0 batches=251 proc_est=77.15% batch_us(avg/min/max)=390119.7/389045/395444 e2e_us(avg/min/max)=390142.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:19.182 > I (130963) main: mon: q_used=31 q_free=469 q_peak=97 produced=32671(249.8Hz) processed=32512(253.1Hz) dropped=0 batches=254 proc_est=77.15% batch_us(avg/min/max)=390112.7/389045/395444 e2e_us(avg/min/max)=390135.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:20.712 > I (132480) main: mon: q_used=27 q_free=473 q_peak=97 produced=33051(250.5Hz) processed=32896(253.1Hz) dropped=0 batches=257 proc_est=77.14% batch_us(avg/min/max)=390085.0/389045/395444 e2e_us(avg/min/max)=390108.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:20.734 > I (132499) main: cpu: acq=1.34% proc=76.13% mon=1.30% idle0=97.33% idle1=23.78% other=0.02% total_ticks=132299399 tasks=8
+12:35:22.233 > I (134008) main: mon: q_used=25 q_free=475 q_peak=97 produced=33433(250.0Hz) processed=33280(251.3Hz) dropped=0 batches=260 proc_est=76.67% batch_us(avg/min/max)=390501.7/389045/395444 e2e_us(avg/min/max)=390524.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:23.032 > W (134811) main: ALERT: floss[4371]=0.28292 <= 0.45000 (ts=134220825)
+12:35:23.552 > W (135322) main: ALERT: floss[4371]=0.31161 <= 0.45000 (ts=134731533)
+12:35:23.757 > I (135525) main: mon: q_used=20 q_free=480 q_peak=97 produced=33812(249.8Hz) processed=33664(253.1Hz) dropped=0 batches=263 proc_est=77.14% batch_us(avg/min/max)=390047.3/389045/395444 e2e_us(avg/min/max)=390070.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:24.066 > W (135835) main: ALERT: floss[4371]=0.29677 <= 0.45000 (ts=135244825)
+12:35:24.575 > W (136346) main: ALERT: floss[4371]=0.38185 <= 0.45000 (ts=135755533)
+12:35:25.089 > W (136859) main: ALERT: floss[4371]=0.31458 <= 0.45000 (ts=136268827)
+12:35:25.274 > I (137042) main: mon: q_used=15 q_free=485 q_peak=97 produced=34191(249.8Hz) processed=34048(253.1Hz) dropped=0 batches=266 proc_est=77.13% batch_us(avg/min/max)=390042.0/389045/395444 e2e_us(avg/min/max)=390065.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:25.595 > W (137370) main: ALERT: floss[4371]=0.28985 <= 0.45000 (ts=136779533)
+12:35:26.792 > I (138559) main: mon: q_used=10 q_free=490 q_peak=97 produced=34570(249.8Hz) processed=34432(253.1Hz) dropped=0 batches=269 proc_est=77.10% batch_us(avg/min/max)=389891.3/389045/395444 e2e_us(avg/min/max)=389914.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:26.810 > I (138578) main: cpu: acq=1.34% proc=76.17% mon=1.30% idle0=97.33% idle1=23.78% other=0.02% total_ticks=138378403 tasks=8
+12:35:27.139 > W (138909) main: ALERT: floss[4371]=0.43230 <= 0.45000 (ts=138316827)
+12:35:27.643 > W (139417) main: ALERT: floss[4371]=0.41153 <= 0.45000 (ts=138827533)
+12:35:28.319 > I (140087) main: mon: q_used=8 q_free=492 q_peak=97 produced=34952(250.0Hz) processed=34816(251.3Hz) dropped=0 batches=272 proc_est=76.68% batch_us(avg/min/max)=390560.0/389045/395444 e2e_us(avg/min/max)=390583.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:29.836 > I (141604) main: mon: q_used=4 q_free=496 q_peak=97 produced=35332(250.5Hz) processed=35200(253.1Hz) dropped=0 batches=275 proc_est=77.14% batch_us(avg/min/max)=390096.3/389045/395444 e2e_us(avg/min/max)=390119.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:31.353 > I (143121) main: mon: q_used=0 q_free=500 q_peak=97 produced=35711(249.8Hz) processed=35584(253.1Hz) dropped=0 batches=278 proc_est=77.15% batch_us(avg/min/max)=390142.0/389045/395444 e2e_us(avg/min/max)=390165.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:32.870 > I (144638) main: mon: q_used=0 q_free=500 q_peak=97 produced=36090(249.8Hz) processed=35968(253.1Hz) dropped=0 batches=281 proc_est=77.16% batch_us(avg/min/max)=390155.7/389045/395444 e2e_us(avg/min/max)=390179.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:32.890 > I (144657) main: cpu: acq=1.34% proc=76.22% mon=1.30% idle0=97.34% idle1=23.78% other=0.02% total_ticks=144457300 tasks=8
+12:35:34.390 > I (146166) main: mon: q_used=0 q_free=500 q_peak=97 produced=36472(250.0Hz) processed=36352(251.3Hz) dropped=0 batches=284 proc_est=76.58% batch_us(avg/min/max)=390071.7/389045/395444 e2e_us(avg/min/max)=390095.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:35.915 > I (147683) main: mon: q_used=0 q_free=500 q_peak=97 produced=36851(249.8Hz) processed=36736(253.1Hz) dropped=0 batches=287 proc_est=77.15% batch_us(avg/min/max)=390105.7/389045/395444 e2e_us(avg/min/max)=390129.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:37.378 > W (149147) main: ALERT: floss[4371]=0.44912 <= 0.45000 (ts=148556825)
+12:35:37.432 > I (149200) main: mon: q_used=0 q_free=500 q_peak=97 produced=37231(250.5Hz) processed=37120(253.1Hz) dropped=0 batches=290 proc_est=77.16% batch_us(avg/min/max)=390186.0/389045/395444 e2e_us(avg/min/max)=390209.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:37.888 > W (149658) main: ALERT: floss[4371]=0.37294 <= 0.45000 (ts=149067545)
+12:35:38.400 > W (150171) main: ALERT: floss[4371]=0.36404 <= 0.45000 (ts=149580825)
+12:35:38.913 > W (150682) main: ALERT: floss[4371]=0.38482 <= 0.45000 (ts=150091533)
+12:35:38.949 > I (150717) main: mon: q_used=0 q_free=500 q_peak=97 produced=37610(249.8Hz) processed=37504(253.1Hz) dropped=0 batches=293 proc_est=77.17% batch_us(avg/min/max)=390246.7/389045/395444 e2e_us(avg/min/max)=390270.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:38.970 > I (150736) main: cpu: acq=1.34% proc=76.26% mon=1.30% idle0=97.34% idle1=23.74% other=0.02% total_ticks=150536246 tasks=8
+12:35:39.936 > W (151706) main: ALERT: floss[4371]=0.44813 <= 0.45000 (ts=151115533)
+12:35:40.476 > I (152244) main: mon: q_used=0 q_free=500 q_peak=97 produced=37992(250.2Hz) processed=37888(251.5Hz) dropped=0 batches=296 proc_est=76.64% batch_us(avg/min/max)=390089.3/389045/395444 e2e_us(avg/min/max)=390112.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:40.950 > W (152730) main: ALERT: floss[4371]=0.34722 <= 0.45000 (ts=152139535)
+12:35:41.474 > W (153243) main: ALERT: floss[4371]=0.36998 <= 0.45000 (ts=152652827)
+12:35:41.982 > W (153754) main: ALERT: floss[4371]=0.34525 <= 0.45000 (ts=153163533)
+12:35:41.993 > I (153761) main: mon: q_used=0 q_free=500 q_peak=97 produced=38371(249.8Hz) processed=38272(253.1Hz) dropped=0 batches=299 proc_est=77.17% batch_us(avg/min/max)=390227.7/389045/395444 e2e_us(avg/min/max)=390251.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:43.510 > I (155278) main: mon: q_used=94 q_free=406 q_peak=97 produced=38750(249.8Hz) processed=38528(168.8Hz) dropped=0 batches=301 proc_est=51.45% batch_us(avg/min/max)=390222.5/389045/395444 e2e_us(avg/min/max)=390245.5/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:45.027 > I (156795) main: mon: q_used=89 q_free=411 q_peak=97 produced=39129(249.8Hz) processed=38912(253.1Hz) dropped=0 batches=304 proc_est=77.18% batch_us(avg/min/max)=390252.7/389045/395444 e2e_us(avg/min/max)=390276.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:45.044 > I (156814) main: cpu: acq=1.34% proc=76.05% mon=1.30% idle0=97.34% idle1=23.71% other=0.02% total_ticks=156614404 tasks=8
+12:35:45.561 > W (157339) main: ALERT: floss[4371]=0.43922 <= 0.45000 (ts=156748888)
+12:35:46.543 > I (158323) main: mon: q_used=87 q_free=413 q_peak=97 produced=39511(250.0Hz) processed=39296(251.3Hz) dropped=0 batches=307 proc_est=76.74% batch_us(avg/min/max)=390858.3/389045/395444 e2e_us(avg/min/max)=390881.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:48.072 > I (159840) main: mon: q_used=83 q_free=417 q_peak=97 produced=39891(250.5Hz) processed=39680(253.1Hz) dropped=0 batches=310 proc_est=77.18% batch_us(avg/min/max)=390265.3/389045/395444 e2e_us(avg/min/max)=390289.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:49.589 > I (161357) main: mon: q_used=78 q_free=422 q_peak=97 produced=40270(249.8Hz) processed=40064(253.1Hz) dropped=0 batches=313 proc_est=77.16% batch_us(avg/min/max)=390182.7/389045/395444 e2e_us(avg/min/max)=390205.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:50.688 > W (162458) main: ALERT: floss[4371]=0.22258 <= 0.45000 (ts=161867535)
+12:35:51.107 > I (162874) main: mon: q_used=73 q_free=427 q_peak=97 produced=40649(249.8Hz) processed=40448(253.1Hz) dropped=0 batches=316 proc_est=77.17% batch_us(avg/min/max)=390248.0/389045/395444 e2e_us(avg/min/max)=390271.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:51.130 > I (162894) main: cpu: acq=1.34% proc=76.09% mon=1.30% idle0=97.34% idle1=23.71% other=0.02% total_ticks=162693413 tasks=8
+12:35:51.202 > W (162972) main: ALERT: floss[4371]=0.34920 <= 0.45000 (ts=162379533)
+12:35:51.707 > W (163482) main: ALERT: floss[4371]=0.43428 <= 0.45000 (ts=162891537)
+12:35:52.635 > I (164402) main: mon: q_used=71 q_free=429 q_peak=97 produced=41031(250.0Hz) processed=40832(251.3Hz) dropped=0 batches=319 proc_est=76.74% batch_us(avg/min/max)=390847.7/389045/395444 e2e_us(avg/min/max)=390870.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:54.151 > I (165919) main: mon: q_used=66 q_free=434 q_peak=97 produced=41410(249.8Hz) processed=41216(253.1Hz) dropped=0 batches=322 proc_est=77.18% batch_us(avg/min/max)=390256.0/389045/395444 e2e_us(avg/min/max)=390279.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:55.669 > I (167436) main: mon: q_used=62 q_free=438 q_peak=97 produced=41790(250.5Hz) processed=41600(253.1Hz) dropped=0 batches=325 proc_est=77.17% batch_us(avg/min/max)=390217.7/389045/395444 e2e_us(avg/min/max)=390240.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:57.186 > I (168953) main: mon: q_used=57 q_free=443 q_peak=97 produced=42169(249.8Hz) processed=41984(253.1Hz) dropped=0 batches=328 proc_est=77.18% batch_us(avg/min/max)=390258.7/389045/395444 e2e_us(avg/min/max)=390281.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:35:57.202 > I (168972) main: cpu: acq=1.34% proc=76.14% mon=1.30% idle0=97.34% idle1=23.71% other=0.02% total_ticks=168772355 tasks=8
+12:35:58.713 > I (170481) main: mon: q_used=55 q_free=445 q_peak=97 produced=42551(250.0Hz) processed=42368(251.3Hz) dropped=0 batches=331 proc_est=76.72% batch_us(avg/min/max)=390784.7/389045/395444 e2e_us(avg/min/max)=390807.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:00.230 > I (171998) main: mon: q_used=50 q_free=450 q_peak=97 produced=42930(249.8Hz) processed=42752(253.1Hz) dropped=0 batches=334 proc_est=77.17% batch_us(avg/min/max)=390240.0/389045/395444 e2e_us(avg/min/max)=390263.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:01.440 > W (173210) main: ALERT: floss[4371]=0.36305 <= 0.45000 (ts=172619533)
+12:36:01.747 > I (173515) main: mon: q_used=45 q_free=455 q_peak=97 produced=43309(249.8Hz) processed=43136(253.1Hz) dropped=0 batches=337 proc_est=77.17% batch_us(avg/min/max)=390220.7/389045/395444 e2e_us(avg/min/max)=390243.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:01.953 > W (173722) main: ALERT: floss[4371]=0.36998 <= 0.45000 (ts=173131537)
+12:36:02.464 > W (174234) main: ALERT: floss[4371]=0.37888 <= 0.45000 (ts=173643533)
+12:36:03.265 > I (175032) main: mon: q_used=41 q_free=459 q_peak=97 produced=43689(250.5Hz) processed=43520(253.1Hz) dropped=0 batches=340 proc_est=77.16% batch_us(avg/min/max)=390166.0/389045/395444 e2e_us(avg/min/max)=390189.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:03.283 > I (175051) main: cpu: acq=1.34% proc=76.18% mon=1.30% idle0=97.34% idle1=23.72% other=0.02% total_ticks=174851398 tasks=8
+12:36:04.792 > I (176560) main: mon: q_used=39 q_free=461 q_peak=97 produced=44071(250.0Hz) processed=43904(251.3Hz) dropped=0 batches=343 proc_est=76.73% batch_us(avg/min/max)=390791.3/389045/395444 e2e_us(avg/min/max)=390814.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:06.308 > I (178077) main: mon: q_used=34 q_free=466 q_peak=97 produced=44450(249.8Hz) processed=44288(253.1Hz) dropped=0 batches=346 proc_est=77.18% batch_us(avg/min/max)=390250.0/389045/395444 e2e_us(avg/min/max)=390273.0/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:07.059 > W (178842) main: ALERT: floss[4371]=0.44219 <= 0.45000 (ts=178251537)
+12:36:07.823 > I (179594) main: mon: q_used=29 q_free=471 q_peak=97 produced=44829(249.8Hz) processed=44672(253.1Hz) dropped=0 batches=349 proc_est=77.15% batch_us(avg/min/max)=390127.7/389045/395444 e2e_us(avg/min/max)=390150.7/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:09.342 > I (181111) main: mon: q_used=24 q_free=476 q_peak=97 produced=45208(249.8Hz) processed=45056(253.1Hz) dropped=0 batches=352 proc_est=77.14% batch_us(avg/min/max)=390049.3/389045/395444 e2e_us(avg/min/max)=390072.3/389068/395467 stack(acq/proc/mon)=6088/13948/2916 heap8_free=62224 heap8_largest=34816
+12:36:09.369 > I (181130) main: cpu: acq=1.34% proc=76.21% mon=1.30% idle0=97.34% idle1=23.72% other=0.02% total_ticks=180930407 tasks=8

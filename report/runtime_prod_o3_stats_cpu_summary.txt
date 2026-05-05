@@ -1,0 +1,13 @@
+runtime_prod_o3_stats CPU snapshot
+source: report/runtime_prod_o3_stats_capture.log
+samples: 26 cpu lines
+
+acq: mean=1.170 p95=1.170 min=1.170 max=1.170
+proc: mean=47.198 p95=47.453 min=45.460 max=47.460
+mon: mean=1.276 p95=1.345 min=1.260 max=1.480
+idle0: mean=97.468 p95=97.550 min=96.650 max=97.550
+idle1: mean=52.704 p95=53.060 min=52.540 max=54.430
+other: mean=0.078 p95=0.245 min=0.020 max=0.610
+
+exported rows:
+- report/runtime_prod_o3_stats_cpu_lines.csv
