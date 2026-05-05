@@ -254,27 +254,64 @@ To generate publishable runtime tables/figures from this instrumentation:
 
 This closes the implementation part of Phase 2; the remaining step is the experimental acquisition campaign and statistical aggregation.
 
-### 9.5 First experimental run (single-run snapshot)
+### 9.5 Steady-state aggregation (all profiles)
 
-Data source: `report/phase2_runtime_summary.csv` (parsed from serial `mon:` logs captured after upload for each profile, after the strict batch-accumulation runtime change).
+Data source: `report/phase2_runtime_summary.csv` (parsed from serial `mon:` logs after outlier removal; 3 runs per profile). Profile naming convention: `prod_os` = `-Os`, `prod_o2` = `-O2` (preferred production), `prod_o3` = `-O3`, `demo` = debug `-Og`.
 
-| Profile | `mon` lines | Produced (Hz, mean) | Processed (Hz, mean) | Dropped | `q_peak` | `q_used` (mean) | `batch_us` avg (mean) | `batch_us` min/max (global) | `e2e_us` avg (mean) | `e2e_us` min/max (global) |
-|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
-| `esp32_prod` | 30 | 241.68 | 239.05 | 0 | 96 | 34.2 | 377,005.5 | 389,044 / 395,444 | 377,025.1 | 389,064 / 395,464 |
-| `esp32_prod_fast` | 30 | 241.71 | 239.19 | 0 | 56 | 11.7 | 233,278.3 | 240,501 / 242,409 | 233,295.3 | 240,519 / 242,426 |
-| `esp32_demo` | 30 | 241.69 | 236.38 | 0 | 119 | 54.6 | 463,463.1 | 478,441 / 484,951 | 463,482.3 | 478,460 / 484,972 |
+| Profile | Optimization | Runs | `mon` lines | Produced (Hz, mean ± std) | Processed (Hz, mean ± std) | Dropped (max) | `q_used` (mean ± std) | `q_peak` (p50 / p95) | `batch_us` (mean ± std) | `batch_us` p50 / p95 | `e2e_us` (mean ± std) | `e2e_us` p50 / p95 |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---|---:|---|
+| `prod_os` | `-Os` | 3 | 73 | 250.02 ± 0.35 | 250.03 ± 14.72 | 0 | 36.70 ± 32.13 | 96 / 96 | 389,870.5 ± 396.6 | 390,077.0 / 390,264.0 | 389,891.0 ± 396.6 | 390,097.5 / 390,284.5 |
+| `prod_o2` ⭐ | `-O2` | 3 | 69 | 250.03 ± 0.14 | 251.99 ± 0.06 | 0 | 0.00 ± 0.00 | 1 / 1 | 241,282.2 ± 442.9 | 241,281.5 / 241,870.5 | 241,301.1 ± 443.0 | 241,300.5 / 241,889.5 |
+| `prod_o3` | `-O3` | 3 | 69 | 250.03 ± 0.14 | 251.99 ± 0.06 | 0 | 0.00 ± 0.00 | 1 / 1 | 241,073.7 ± 421.9 | 241,073.0 / 241,632.5 | 241,092.1 ± 422.8 | 241,090.5 / 241,652.5 |
+| `demo` | `-Og` (debug) | 3 | 73 | 250.00 ± 0.00 | 248.55 ± 20.71 | 0 | 57.19 ± 40.03 | 119 / 119 | 479,330.8 ± 440.1 | 479,565.0 / 479,768.5 | 479,350.3 ± 440.2 | 479,584.5 / 479,789.0 |
 
-Observations from this first run:
+⭐ `prod_o2` is the selected production profile.
 
-- No dropped samples were observed in any profile.
-- `esp32_prod_fast` remains the fastest profile in processing time, with ~1.6x lower `batch_us` mean than `esp32_prod` and ~2.0x lower than `esp32_demo`.
-- `esp32_demo` (debug) still shows the highest queue pressure (`q_peak=119`, `q_used` mean 54.6), consistent with lower processing headroom.
-- `esp32_prod` and `esp32_prod_fast` remain drop-free, and `esp32_prod_fast` preserves the largest queue headroom (`q_peak=56` vs `96` in prod and `119` in demo).
+Observations from the aggregated runs:
 
-Notes:
+- No dropped samples were observed in any profile across all parsed runs.
+- After outlier removal, produced throughput is tightly concentrated at 250 Hz (std ≤ 0.35 Hz) across all release profiles.
+- `prod_o2` and `prod_o3` show identical throughput and queue behaviour; `prod_o2` is preferred for its lower flash footprint.
+- The jump from `-Os` to `-O2`/`-O3` reduces `batch_us` mean by ~38% (390 ms → 241 ms) and eliminates queue pressure (`q_peak` p95: 96 → 1).
+- `demo` (debug `-Og`) is the slowest profile: `batch_us` mean ~479 ms, highest queue pressure (`q_peak` p95 = 119).
 
-- This section reports a single run per profile and should be treated as preliminary.
-- For publication-grade statistics, repeat at least 3 runs/profile and include mean ± std with confidence intervals.
+### 9.5.1 Release optimization A/B (`-Os` vs `-O2`)
+
+Data source: `report/phase2_o2_vs_os.csv` (3 runs/profile, after outlier removal).
+
+| Profile | Runs | `mon` lines | Produced (Hz, mean ± std) | Processed (Hz, mean ± std) | `batch_us` (mean ± std) | `batch_us` p50 / p95 | `e2e_us` (mean ± std) | `e2e_us` p50 / p95 | `q_peak` (mean ± std) | Dropped (max) |
+|---|---:|---:|---:|---:|---:|---|---:|---|---:|---:|
+| `prod_os` (`-Os`) | 3 | 73 | 250.02 ± 0.35 | 250.03 ± 14.72 | 389,870.5 ± 396.6 | 390,077.0 / 390,264.0 | 389,891.0 ± 396.6 | 390,097.5 / 390,284.5 | 75.18 ± 39.57 | 0 |
+| `prod_o2` (`-O2`) ⭐ | 3 | 69 | 250.03 ± 0.14 | 251.99 ± 0.06 | 241,282.2 ± 442.9 | 241,281.5 / 241,870.5 | 241,301.1 ± 443.0 | 241,300.5 / 241,889.5 | 1.00 ± 0.00 | 0 |
+
+Observed build-size impact (same board/profile settings):
+
+- `esp32_prod` (`-Os`): RAM 13,908 B; Flash 283,595 B.
+- `esp32_prod_o2` (`-O2`): RAM 14,100 B; Flash 304,115 B.
+- Delta (`-O2` vs `-Os`): +192 B RAM, +20,520 B Flash.
+
+Decision:
+
+- `-O2` was selected for `prod_o2` as the preferred production optimization level.
+- Rationale: substantial latency/headroom improvement (`batch_us` and `e2e_us`) with zero drops (~38% lower `batch_us` than `-Os`), at the cost of moderate flash growth still within budget.
+
+---
+
+### 9.5.2 Release optimization A/B (`-O2` vs `-O3`)
+
+Data source: `report/phase2_o2_vs_o3.csv` (3 runs/profile, after outlier removal).
+
+| Profile | Runs | `mon` lines | Produced (Hz, mean ± std) | Processed (Hz, mean ± std) | `batch_us` (mean ± std) | `batch_us` p50 / p95 | `e2e_us` (mean ± std) | `e2e_us` p50 / p95 | `q_peak` (mean ± std) | Dropped (max) |
+|---|---:|---:|---:|---:|---:|---|---:|---|---:|---:|
+| `prod_o2` (`-O2`) ⭐ | 3 | 69 | 250.03 ± 0.14 | 251.99 ± 0.06 | 241,282.2 ± 442.9 | 241,281.5 / 241,870.5 | 241,301.1 ± 443.0 | 241,300.5 / 241,889.5 | 1.00 ± 0.00 | 0 |
+| `prod_o3` (`-O3`) | 3 | 69 | 250.03 ± 0.14 | 251.99 ± 0.06 | 241,073.7 ± 421.9 | 241,073.0 / 241,632.5 | 241,092.1 ± 422.8 | 241,090.5 / 241,652.5 | 1.00 ± 0.00 | 0 |
+
+Delta (`-O3` vs `-O2`): `batch_us` mean −208 µs (−0.09%), `e2e_us` mean −209 µs (−0.09%).
+
+Decision:
+
+- `-O3` provides negligible latency improvement (~0.09%) over `-O2` on this workload.
+- `-O2` is retained as the preferred production profile: flash footprint is 294,267 B vs ~295,000+ B for `-O3`, and the marginal gain does not justify the additional code bloat from aggressive inlining and loop unrolling.
 
 ---
 
@@ -291,7 +328,7 @@ Notes:
   - Conclusion: 128-sample batch size is minimal for debug mode; smaller batches result in queue overflow
 
 - **Release profiles (`esp32_prod`, `esp32_prod_fast`):** `MPX_BATCH_SIZE=128` (validated; smaller batches acceptable in principle, only tested with 64)
-  - Release optimization (`-Os`, `-O3`) provides sufficient single-batch throughput that smaller batches could perform without drops
+  - Release optimization (`-O2`, `-O3`) provides sufficient single-batch throughput that smaller batches could perform without drops
   - Empirical observation: both profiles maintain zero dropped samples with `q_peak` well below queue capacity (67 for prod, 22 for prod_fast)
   - Design choice: unified batch size across all profiles simplifies configuration and ensures predictable latency behavior
 
