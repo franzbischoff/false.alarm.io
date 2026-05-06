@@ -1,0 +1,13 @@
+runtime_demo_stats CPU snapshot
+source: report/runtime_demo_stats_capture.log
+samples: 36 cpu lines
+
+acq: mean=1.341 p95=1.340 min=1.340 max=1.370
+proc: mean=92.026 p95=93.398 min=82.060 max=93.450
+mon: mean=1.893 p95=1.912 min=1.880 max=2.110
+idle0: mean=96.659 p95=96.750 min=95.410 max=96.750
+idle1: mean=7.336 p95=9.737 min=6.450 max=17.680
+other: mean=0.104 p95=0.333 min=0.020 max=1.050
+
+exported rows:
+- report/runtime_demo_stats_cpu_lines.csv

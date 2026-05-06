@@ -10,12 +10,12 @@
   "license": "Apache-2.0",
   "homepage": "https://github.com/franzbischoff/false.alarm.io.git",
   "frameworks": [
-    "espidf",
-    "arduino"
+    "espidf"
   ],
   "platforms": [
-    "native",
-    "raspberrypi"
+    "native"
   ],
-  "headers": ["Mpx.hpp"]
+  "headers": [
+    "Mpx.hpp"
+  ]
 }

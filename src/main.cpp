@@ -1,488 +1,614 @@
-// This is a personal academic project. Dear PVS-Studio, please check it.
+#if !defined(ESP_PLATFORM)
 
-// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
+#include <cstdio>
 
-#include <Mpx.hpp>
-
-#ifndef NATIVE_PLATFORM
-#include <freertos/queue.h>
-#include <SparkFun_Bio_Sensor_Hub_Library.hpp>
-#if defined(FILE_DATA)
-#include <FS.h>
-#include <LittleFS.h>
-
-#define FORMAT_LITTLEFS_IF_FAILED false
-#endif
-#else
-#include <fstream>
-#include <iostream>
-#include <string>
-#endif
-
-//>> Matrix Profile settings are defined on compile time
-#define WIN_SIZE WINDOW_SIZE
-#define S_SAMPLES SENSOR_SAMPLES
-#define S_WIDTH SENSOR_WIDTH
-#define SAMPLING_HZ SAMPLING_RATE_HZ
-#define HIST_SIZE (HISTORY_SIZE_S * SAMPLING_HZ)
-#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
-#define BUFFER_SIZE (WIN_SIZE + WIN_SIZE) // must be at least 2x the window_size
-#define QUEUE_SIZE (BUFFER_SIZE + 20)     // queue must have a little more room
-
-#ifndef SHORT_FILTER
-#define SHORT_FILTER (SAMPLING_HZ / 10)
-#endif
-#ifndef WANDER_FILTER
-#define WANDER_FILTER (SAMPLING_HZ / 2)
-#endif
-
-//>> multitask configurations
-// define two tasks for Blink & AnalogRead
-void task_compute(void *pv_parameters);
-#ifndef NATIVE_PLATFORM
-void task_read_signal(void *pv_parameters);
-void mon_task(void *pv_parameters);
-void idle_task(void *pv_parameters);
-
-enum { CORE_0 = 0, CORE_1 = 1 };
-
-QueueHandle_t queue; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-#else
-float values[QUEUE_SIZE]; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-uint16_t recv_count = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-uint32_t read_line = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-MatrixProfile::Mpx mpx(WIN_SIZE, 0.5F, 0, HIST_SIZE); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-#endif
-bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-#ifndef NATIVE_PLATFORM
-
-//>> Usual setup function
-// the setup function runs once when you press reset or power the board
-// cppcheck-suppress unusedFunction
-void setup() {
-
-  uint16_t queue_size = QUEUE_SIZE;
-  // initialize serial communication at 115200 bits per second:
-  Serial.begin(115200);
-  Serial.setDebugOutput(true);
-
-#if defined(FILE_DATA)
-  if (!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)) {
-    printf("LittleFS Mount Failed");
-    return;
-  }
-#endif
-
-  queue = xQueueCreate(queue_size, sizeof(float));
-
-  if (queue == nullptr) {
-    printf("[Setup] Error creating the queue. Aborting.");
-    ESP.restart();
-  }
-
-#if defined(LOG_CPU_LOAD)
-  // Now set up two tasks to run independently.
-  xTaskCreatePinnedToCore(idle_task,  // Task function
-                          "Idle CPU", // Just a name
-                          1700, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          nullptr, // Parameter passed as input of the task (can be NULL)
-                          0, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_0);
-  xTaskCreatePinnedToCore(mon_task,  // Task function
-                          "Mon CPU", // Just a name
-                          1800, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          nullptr, // Parameter passed as input of the task (can be NULL)
-                          10, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_1);
-#endif
-
-  xTaskCreatePinnedToCore(task_compute, // Task function
-                          "Compute",    // Just a name
-                          5000, // This stack size in `word`s can be checked & adjusted by reading the Stack Highwater
-                          nullptr, // Parameter passed as input of the task (can be NULL)
-                          4, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_0);
-
-  xTaskCreatePinnedToCore(task_read_signal, // Task function
-                          "ReadSignal",     // Just a name
-                          5000,             // Stack size in `word`s
-                          nullptr,          // Parameter passed as input of the task (can be NULL)
-                          3, // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                          nullptr, // Task Handle (can be NULL)
-                          CORE_1);
-
-  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
-}
-
-//>> Usual loop function
-// cppcheck-suppress unusedFunction
-void loop() {
-  // Empty. Things are done in Tasks.
-}
-
-#endif
-/*--------------------------------------------------*/
-/*---------------------- Tasks ---------------------*/
-/*--------------------------------------------------*/
-
-#if defined(LOG_CPU_LOAD)
-
-uint32_t idle_cnt = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-void idle_task(void *pv_parameters) {
-  (void)pv_parameters;
-  for (;;) // -H776 A Task shall never return or exit.
-  {
-    vTaskDelay(portTICK_RATE_MS * 0);
-    // printf("%u\n", uxTaskGetStackHighWaterMark(NULL)); // 17316
-    idle_cnt++;
-  }
-}
-
-void mon_task(void *pv_parameters) {
-  (void)pv_parameters;
-  TickType_t last_wake_time;
-
-  for (;;) // -V776 A Task shall never return or exit.
-  {
-    vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * 3000));
-    uint32_t new_cnt = idle_cnt; // Save the count for printing it ...
-    // printf("CPU frequency: %u MHz\n", ESP.getCpuFreqMHz());
-    // printf("Available memory: %u/327680 bytes\n", ESP.getFreeHeap());
-    printf("CPU usage: %.3f\n", (float)(3000 - new_cnt) / 30.0F);
-    idle_cnt = 0;
-    // printf("%u\n", uxTaskGetStackHighWaterMark(NULL)); // 17316
-  }
-}
-
-#endif
-
-void task_compute(void *pv_parameters) // This is a task.
-{
-  (void)pv_parameters;
-
-  const uint16_t floss_landmark = FLOSS_LANDMARK;
-  float buffer[BUFFER_SIZE];
-#ifndef NATIVE_PLATFORM
-  const uint16_t win_size = WIN_SIZE;
-  const uint16_t hist_size = HIST_SIZE;
-  uint16_t recv_count;
-  int16_t delay_adjust = 100;
-  float data = 0.0F;
-#endif
-
-  for (uint16_t i = 0; i < BUFFER_SIZE; i++) { // NOLINT(modernize-loop-convert)
-    buffer[i] = 0.0F;
-  }
-
-#ifndef NATIVE_PLATFORM
-  MatrixProfile::Mpx mpx(win_size, 0.5F, 0, hist_size);
-  mpx.prune_buffer();
-
-  for (;;) // -H776 A Task shall never return or exit.
-  {
-#endif
-    if (buffer_init) { // wait for buffer to be initialized
-#ifndef NATIVE_PLATFORM
-      recv_count = 0;
-
-      for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-        if (xQueueReceive(queue, &data, 0)) {
-          buffer[i] = data; // read data from queue
-          recv_count = i + 1;
-        } else {
-          break; // no more data in queue
-        }
-      }
-#else
-    for (uint16_t i = 0; i < recv_count; i++) {
-      buffer[i] = values[i];
-    }
-#endif
-
-      if (recv_count > 0) {
-        // printf("Compute %u\n", uxTaskGetStackHighWaterMark(NULL));
-
-        mpx.compute(buffer, recv_count); /////////////////
-        mpx.floss();
-
-        // const uint16_t profile_len = mpx.get_profile_len();
-        float *floss = mpx.get_floss();
-        float *matrix = mpx.get_matrix();
-        // int16_t *indexes = mpx.get_indexes();
-        // float *vmmu = mpx.get_vmmu();
-        // float *vsig = mpx.get_vsig();
-        // float *ddf = mpx.get_ddf();
-        // float *ddg = mpx.get_ddg();
-        // const float last_mov2sum = mpx.get_last_mov2sum();
-        // 3076.35815; 2856.01782; 1586.00159; 994.676636 516.238647 1314.97229 1708.46899 16.04523
-        // 2318.72559; 1960.73865; 1300.25232; 661.98584; 443.209381; 823.406555; 938.791565
-        // 826.757019; 300.426056; 153.044556; 492.913391; 1809.8042; 2651.82349; 3068.31763
-        // 1791.32373; 1003.05811; 349.738037; 371.356781; 596.308411; 1272.40576; 1586.12268
-        // 1672.79907; 915.265381; 495.762756; 94.2086945; 489.184814; 791.40918; 1512.28516
-        // 1335.75464; 1062.51929; 414.154449; 437.533112; 741.733887; 1126.24634; 2045.8927;
-        // 1766.2041; 1548.69617; 551.398743; 309.887634; 445.998322; 652.136719 578.875549
-        // 769.482056; 556.67865 903.001709 950.161377 1266.453 1248.04871 1026.78845 741.639587
-        // 451.705811; 324.240173 565.615051 767.656128 982.322754 694.380493 462.135345
-        // 107.598633 95.2946625 15.2094345 67.5365067, 75.9099045, 819.320435, 1036.26453,
-        // 1034.60144, 652.909058, 988.230103, 3970.94995, 4499.20459, 4784.39648, 2391.40015,
-        // 8817.62793,  71558.25, 406204.906, 613322.062, 1951099.38, 2475905.5, 2333115.5, 1855079.12
-        // 4162497.25, 6179072.5, 6823374.5, 4492077, 1577478.62, 562556.062, 240837.156, 12876.641, 60801.793
-        // 52322.2969 42445.2539 35416.9648 136693.031 330022.5 2876578.25 12545874 15420299 15186808
-        // 5865206 1647932 1491935.62 1527195.88 620016.5 296991.5 233162.656 243589.984 17006.609
-        // 2550801.5 6002749.5 6333334.5 6078726.5 5050615 6023107 8588083 17385128 20681866 21138936 1717056
-        // 127312749 11454504 4863423 3195388.5 2994941.75 3035440 2031340.88 385834.75 4011829 407499.5
-        // 3293068.75 703413.438 1693812.12 2352266.5 327993.5 2897976.75 1626859.75 815760.125 456107.094
-        // 672710.688 1232217.5 18466747.38 1533687.62 1287871.38 401132.719 425417.281 466348.5
-
-        // std::ofstream file_out;
-
-        // if (read_line > 8800 && read_line < 8900) {
-        //   file_out.open("dev/last_out.csv", std::fstream::app);
-
-        //   if (!file_out.is_open()) {
-        //     std::cout << "Unable to open file_out" << std::endl;
-        //   } else {
-        //     for (uint16_t i = 0; i < profile_len; i++) {
-        //       const std::string line =
-        //           std::to_string(read_line) + "," + std::to_string(floss[i]) + "," + std::to_string(matrix[i]) + ","
-        //           + std::to_string(indexes[i]) + "," + std::to_string(vmmu[i]) + "," + std::to_string(vsig[i]) + ","
-        //           + std::to_string(ddf[i]) + "," + std::to_string(ddg[i]) + "," + std::to_string(last_mov2sum) +
-        //           "\n";
-        //       file_out.write(line.c_str(), line.length());
-        //     }
-        //     file_out.close();
-        //   }
-        // }
-
-        for (uint16_t i = 0; i < recv_count; i++) {
-          printf("%.1f %.2f %.2f\n", buffer[i], floss[floss_landmark + i],
-                 matrix[floss_landmark + i]); // indexes[floss_landmark + i]);
-        }
-        // printf("[Consumer] %d\n", recv_count); // handle about 400 samples per second
-#ifndef NATIVE_PLATFORM
-        if (recv_count > 40) {
-          delay_adjust -= 5;
-          if (delay_adjust <= 0) {
-            delay_adjust = 1;
-          }
-        } else {
-          if (recv_count < 20) {
-            delay_adjust += 5;
-          }
-        }
-#endif
-      }
-#ifndef NATIVE_PLATFORM
-    } else {
-      // printf("-1, -1\n");
-      vTaskDelay((portTICK_PERIOD_MS * 2)); // for stability
-#endif
-    }
-
-#ifndef NATIVE_PLATFORM
-    vTaskDelay((portTICK_PERIOD_MS * delay_adjust)); // for stability
-  }
-#endif
-}
-
-#ifndef NATIVE_PLATFORM
-void task_read_signal(void *pv_parameters) // This is a task.
-{
-  (void)pv_parameters;
-
-  TickType_t last_wake_time;
-
-  uint16_t initial_counter = 0;
-  float ir_res;
-  const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
-
-#ifndef FILE_DATA
-  // Reset pin, MFIO pin
-  const uint16_t res_pin = RESPIN;
-  const uint16_t mfio_pin = MFIOPIN;
-  // Possible widths: 69, 118, 215, 411us
-  const uint16_t width = S_WIDTH;
-  // Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
-  // Not every sample amount is possible with every width; check out our hookup
-  // guide for more information.
-  const uint16_t samples = S_SAMPLES;
-
-  // short period filter
-  const float s_window = SHORT_FILTER;
-  const float eps_f = 0.05F;
-  const float alpha = powf(eps_f, 1.0F / s_window);
-
-  // large (wander) period filter
-  const float l_window = WANDER_FILTER;
-  const float l_alpha = powf(eps_f, 1.0F / l_window);
-
-  // Takes address, reset pin, and MFIO pin.
-  SparkFun_Bio_Sensor_Hub bio_hub(res_pin, mfio_pin);
-  bioData body;
-
-  uint32_t ir_led;
-  bool sensor_started = false;
-
-  float ir_sum = 0.0F;
-  float ir_num = 0.0F;
-  float ir_sum2 = 0.0F;
-  float ir_num2 = 0.0F;
-
-  Wire.begin();
-  bio_hub.begin();
-
-  bio_hub.configSensor();
-  bio_hub.setPulseWidth(width);   // 18 bits resolution (0-262143)
-  bio_hub.setSampleRate(samples); // 18 bits resolution (0-262143)
-#else
-  File file = LittleFS.open("/floss.csv"); // NOLINT(misc-const-correctness) - this variable can't be const
-  if (!file || file.isDirectory()) {
-    printf("XXX failed to open file for reading\n.");
-    return;
-  }
-#endif
-
-  vTaskDelay((portTICK_PERIOD_MS * 1000)); // Wait for sensor to stabilize
-
-  last_wake_time = xTaskGetTickCount();
-
-  for (;;) // -H776 A Task shall never return or exit.
-  {
-    vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
-
-#ifndef FILE_DATA
-    body = bio_hub.readSensor(); // Read the sensor outside the IRQ, to avoid overload
-    ir_led = body.irLed;
-
-    if (!sensor_started) {
-      if (ir_led > 1) {
-        sensor_started = true;
-        initial_counter = 0;
-        /* Print chip information */
-        esp_chip_info_t chip_info;
-        esp_chip_info(&chip_info);
-        printf("[Producer] ESP32%s rev %d, %d CPU cores, WiFi%s%s%s, ",
-               (chip_info.model & CHIP_ESP32S2) ? "-S2" : "",
-               chip_info.revision,
-                chip_info.cores,
-               (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-               (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
-               (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
-
-        printf("%uMB %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
-               (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-
-        if(psramFound()) {
-          printf(", %uMB %s PSRAM\n", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
-               (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
-        } else {
-          printf(", No PSRAM found\n");
-        }
-
-        printf("[Producer] Sensor started, now it can be used.\n");
-      } else {
-        initial_counter++;
-        if (initial_counter > 2500) {
-          printf("[Producer] Sensor not properly started, rebooting...\n");
-          ESP.restart();
-        }
-      }
-    }
-
-    // 70744 // t 318384 > 363368 // 277,849/1,310,720 ;; 16,976/327,680
-    // getMaxAllocHeap: 69620
-
-    if (ir_led > 10000) {
-      // printf("Read %u\n", uxTaskGetStackHighWaterMark(NULL)); // 176
-
-      ir_sum = ir_sum * alpha + (float)ir_led;
-      ir_num = ir_num * alpha + 1.0F;
-      ir_sum2 = ir_sum2 * l_alpha + (float)ir_led;
-      ir_num2 = ir_num2 * l_alpha + 1.0F;
-      ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
-      ir_res /= 20.0F;
-#else
-    if (file.available()) {
-      ir_res = file.parseFloat();
-    } else {
-      ir_res = 0.0F;
-      file.close();
-    }
-#endif
-
-      if (ir_res > 50.0F || ir_res < -50.0F) {
-        continue;
-      }
-
-      if (xQueueSend(queue, &ir_res, (portTICK_PERIOD_MS * 200))) { // SUCCESS
-        if (!buffer_init) {
-          if (++initial_counter >= BUFFER_SIZE) {
-            buffer_init = true; // this is read by the receiver task
-            printf("[Producer] DEBUG: Buffer filled, starting to compute\n");
-          }
-        }
-      } else {
-        printf("[Producer] Error sending data to the queue\n");
-      }
-#ifndef FILE_DATA
-    } else {
-      // printf("[Producer] IR: %d\n", body.irLed);
-      vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
-    }
-#endif
-  }
-}
-#endif
-
-#if defined(NATIVE_PLATFORM)
 int main() {
-  std::ifstream file;
-  file.open("data/floss.csv", std::ios::in);
+  std::puts("native build: ESP-IDF app_main is disabled");
+  return 0;
+}
 
-  if (!file.is_open()) {
-    std::cout << "Unable to open file";
-    return 1;
+#else
+
+#include <array>
+#include <atomic>
+#include <cstring>
+#include <cstdio>
+#include <memory>
+
+#include "Mpx.hpp"
+#include "sdkconfig.h"
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "sd_card_service.hpp"
+#include "signal_source.hpp"
+
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+#include "SEGGER_SYSVIEW.h"
+#endif
+
+#ifndef MAIN_LOG_LEVEL
+#define MAIN_LOG_LEVEL ESP_LOG_INFO
+#endif
+
+#ifndef SAMPLING_RATE_HZ
+#define SAMPLING_RATE_HZ 250
+#endif
+
+#ifndef WINDOW_SIZE
+#define WINDOW_SIZE 100
+#endif
+
+#ifndef HISTORY_SIZE_S
+#define HISTORY_SIZE_S 20
+#endif
+
+#ifndef FLOSS_ALERT_THRESHOLD
+#define FLOSS_ALERT_THRESHOLD 0.45F
+#endif
+
+#ifndef SIGNAL_SOURCE_KIND
+#define SIGNAL_SOURCE_KIND 0
+#endif
+
+#ifndef APP_DEBUG_OUTPUT
+#define APP_DEBUG_OUTPUT 1
+#endif
+
+#ifndef DEBUG_LOG_EVERY_N_SAMPLES
+#define DEBUG_LOG_EVERY_N_SAMPLES 25
+#endif
+
+#ifndef LOG_TO_SD_ENABLED
+#define LOG_TO_SD_ENABLED 0
+#endif
+
+#ifndef RING_BUFFER_CAPACITY_SAMPLES
+#define RING_BUFFER_CAPACITY_SAMPLES 500
+#endif
+
+#ifndef MPX_BATCH_SIZE
+#define MPX_BATCH_SIZE 16
+#endif
+
+#ifndef TASK_ACQ_CORE
+#define TASK_ACQ_CORE 0
+#endif
+
+#ifndef TASK_PROC_CORE
+#define TASK_PROC_CORE 1
+#endif
+
+#ifndef TASK_MON_CORE
+#define TASK_MON_CORE 1
+#endif
+
+#ifndef TASK_ACQ_PRIORITY
+#define TASK_ACQ_PRIORITY (tskIDLE_PRIORITY + 4)
+#endif
+
+#ifndef TASK_PROC_PRIORITY
+#define TASK_PROC_PRIORITY (tskIDLE_PRIORITY + 3)
+#endif
+
+#ifndef TASK_MON_PRIORITY
+#define TASK_MON_PRIORITY (tskIDLE_PRIORITY + 1)
+#endif
+
+#ifndef TASK_ACQ_STACK_BYTES
+#define TASK_ACQ_STACK_BYTES 8192
+#endif
+
+#ifndef TASK_PROC_STACK_BYTES
+#define TASK_PROC_STACK_BYTES 16384
+#endif
+
+#ifndef TASK_MON_STACK_BYTES
+#define TASK_MON_STACK_BYTES 6144
+#endif
+
+#ifndef ENABLE_MONITOR_TASK
+#define ENABLE_MONITOR_TASK 1
+#endif
+
+#ifndef DEBUG_MONITOR_PERIOD_MS
+#define DEBUG_MONITOR_PERIOD_MS 2000
+#endif
+
+#ifndef SERIAL_PLOT_MODE
+#define SERIAL_PLOT_MODE 0
+#endif
+
+#ifndef SERIAL_PLOT_EVERY_N
+#define SERIAL_PLOT_EVERY_N 1
+#endif
+
+#ifndef SERIAL_PLOT_TELEPLOT_FORMAT
+#define SERIAL_PLOT_TELEPLOT_FORMAT 0
+#endif
+
+#ifndef SERIAL_PLOT_INCLUDE_MIN_FLOSS
+#define SERIAL_PLOT_INCLUDE_MIN_FLOSS 1
+#endif
+
+#ifndef PROCESS_TASK_COOPERATIVE_DELAY_MS
+#define PROCESS_TASK_COOPERATIVE_DELAY_MS 0
+#endif
+
+#ifndef PROCESS_TASK_WDT_RESET_PERIOD_MS
+#define PROCESS_TASK_WDT_RESET_PERIOD_MS 1000
+#endif
+
+namespace {
+static const char *TAG = "main";
+
+constexpr TickType_t kLoopTick = pdMS_TO_TICKS(1000U / SAMPLING_RATE_HZ);
+constexpr uint16_t kWindowSize = WINDOW_SIZE;
+constexpr uint16_t kHistorySamples = static_cast<uint16_t>(SAMPLING_RATE_HZ * HISTORY_SIZE_S);
+
+struct SignalPacket {
+  float sample;
+  uint64_t timestamp_us;
+};
+
+struct RuntimeContext {
+  QueueHandle_t queue;
+  ISignalSource *source;
+#if LOG_TO_SD_ENABLED
+  SdCardService *sd_service;
+#endif
+};
+
+TaskHandle_t g_task_acq = nullptr;
+TaskHandle_t g_task_proc = nullptr;
+TaskHandle_t g_task_mon = nullptr;
+
+std::atomic<uint32_t> g_dropped_samples{0U};
+std::atomic<uint32_t> g_produced_samples{0U};
+std::atomic<uint32_t> g_processed_samples{0U};
+std::atomic<uint32_t> g_processed_batches{0U};
+std::atomic<uint64_t> g_batch_compute_time_us_sum{0U};
+std::atomic<uint64_t> g_e2e_latency_us_sum{0U};
+std::atomic<uint32_t> g_batch_compute_time_us_min{UINT32_MAX};
+std::atomic<uint32_t> g_batch_compute_time_us_max{0U};
+std::atomic<uint32_t> g_e2e_latency_us_min{UINT32_MAX};
+std::atomic<uint32_t> g_e2e_latency_us_max{0U};
+std::atomic<uint32_t> g_queue_peak_samples{0U};
+
+void update_atomic_min(std::atomic<uint32_t> &target, uint32_t candidate) {
+  uint32_t current = target.load(std::memory_order_relaxed);
+  while ((candidate < current) && !target.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+  }
+}
+
+void update_atomic_max(std::atomic<uint32_t> &target, uint32_t candidate) {
+  uint32_t current = target.load(std::memory_order_relaxed);
+  while ((candidate > current) && !target.compare_exchange_weak(current, candidate, std::memory_order_relaxed)) {
+  }
+}
+
+#if defined(CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS) && defined(CONFIG_FREERTOS_USE_TRACE_FACILITY)
+void log_task_cpu_load_compact() {
+  constexpr UBaseType_t kMaxTasks = 24U;
+  TaskStatus_t task_status[kMaxTasks] = {};
+  uint32_t total_runtime_ticks = 0U;
+  UBaseType_t const task_count = uxTaskGetSystemState(task_status, kMaxTasks, &total_runtime_ticks);
+
+  if ((task_count == 0U) || (total_runtime_ticks == 0U)) {
+    ESP_LOGW(TAG, "cpu: runtime stats unavailable (task_count=%u total=%u)", static_cast<unsigned>(task_count),
+             static_cast<unsigned>(total_runtime_ticks));
+    return;
   }
 
-  uint16_t k = 0;
-  for (std::string line; std::getline(file, line);) // read stream line by line
-  {
-    read_line++;
-    float const v = std::stof(line);
+  uint32_t acq_runtime = 0U;
+  uint32_t proc_runtime = 0U;
+  uint32_t mon_runtime = 0U;
+  uint32_t idle0_runtime = 0U;
+  uint32_t idle1_runtime = 0U;
+  uint32_t other_runtime = 0U;
 
-    if(v > 50.0F || v < -50.0F) {
+  for (UBaseType_t i = 0U; i < task_count; ++i) {
+    if (task_status[i].xHandle == g_task_acq) {
+      acq_runtime += task_status[i].ulRunTimeCounter;
+      continue;
+    }
+    if (task_status[i].xHandle == g_task_proc) {
+      proc_runtime += task_status[i].ulRunTimeCounter;
+      continue;
+    }
+    if (task_status[i].xHandle == g_task_mon) {
+      mon_runtime += task_status[i].ulRunTimeCounter;
       continue;
     }
 
-    values[k++] = v;
+    char const *name = task_status[i].pcTaskName;
+    if (name == nullptr) {
+      continue;
+    }
+    if (std::strcmp(name, "IDLE0") == 0) {
+      idle0_runtime += task_status[i].ulRunTimeCounter;
+    } else if (std::strcmp(name, "IDLE1") == 0) {
+      idle1_runtime += task_status[i].ulRunTimeCounter;
+    } else {
+      other_runtime += task_status[i].ulRunTimeCounter;
+    }
+  }
 
-    if (!buffer_init) {
-      if (k >= ((BUFFER_SIZE)-1)) {
-        buffer_init = true;
-        recv_count = k;
-        k = 0;
-        task_compute(nullptr);
+  float const scale = 100.0F / static_cast<float>(total_runtime_ticks);
+  ESP_LOGI(TAG, "cpu: acq=%.2f%% proc=%.2f%% mon=%.2f%% idle0=%.2f%% idle1=%.2f%% other=%.2f%% total_ticks=%u tasks=%u",
+           static_cast<float>(acq_runtime) * scale, static_cast<float>(proc_runtime) * scale,
+           static_cast<float>(mon_runtime) * scale, static_cast<float>(idle0_runtime) * scale,
+           static_cast<float>(idle1_runtime) * scale, static_cast<float>(other_runtime) * scale,
+           static_cast<unsigned>(total_runtime_ticks), static_cast<unsigned>(task_count));
+}
+#endif
+
+uint16_t compute_floss_probe_index(uint16_t profile_len) {
+  uint16_t const probe_offset = static_cast<uint16_t>(2U * kWindowSize);
+  if (profile_len > probe_offset) {
+    return static_cast<uint16_t>(profile_len - probe_offset);
+  }
+  return 0U;
+}
+
+void task_acquire_signal(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  TickType_t last_wake_time = xTaskGetTickCount();
+
+  for (;;) {
+    SignalPacket packet = {0.0F, 0U};
+
+    esp_err_t const read_ret = ctx->source->read_sample(packet.sample);
+    if (read_ret == ESP_OK) {
+      packet.timestamp_us = static_cast<uint64_t>(esp_timer_get_time());
+      if (xQueueSend(ctx->queue, &packet, 0) != pdTRUE) {
+        g_dropped_samples.fetch_add(1U, std::memory_order_relaxed);
+      } else {
+        g_produced_samples.fetch_add(1U, std::memory_order_relaxed);
       }
     } else {
-      if (k >= 30) {
-        recv_count = k;
-        k = 0;
-        task_compute(nullptr);
+      ESP_LOGW(TAG, "Acquisition read failed (%s)", esp_err_to_name(read_ret));
+    }
+
+    vTaskDelayUntil(&last_wake_time, kLoopTick);
+  }
+}
+
+void task_process_signal(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  MatrixProfile::Mpx mpx(kWindowSize, 0.5F, 0U, kHistorySamples);
+  mpx.prune_buffer();
+
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+  esp_err_t const wdt_add_ret = esp_task_wdt_add(nullptr);
+  if ((wdt_add_ret != ESP_OK) && (wdt_add_ret != ESP_ERR_INVALID_STATE)) {
+    ESP_LOGW(TAG, "Process task WDT add failed (%s)", esp_err_to_name(wdt_add_ret));
+  }
+#endif
+
+  std::array<float, MPX_BATCH_SIZE> samples{};
+  SignalPacket packet = {0.0F, 0U};
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+  TickType_t last_wdt_reset_tick = xTaskGetTickCount();
+  TickType_t const wdt_reset_period_ticks = pdMS_TO_TICKS(PROCESS_TASK_WDT_RESET_PERIOD_MS);
+#endif
+
+#if APP_DEBUG_OUTPUT
+  uint32_t debug_counter = 0U;
+#endif
+#if SERIAL_PLOT_MODE
+  uint32_t serial_plot_counter = 0U;
+#endif
+
+  for (;;) {
+    uint16_t recv_count = 0U;
+    while (recv_count < static_cast<uint16_t>(samples.size())) {
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+      if (xQueueReceive(ctx->queue, &packet, wdt_reset_period_ticks) != pdTRUE) {
+        if (esp_task_wdt_reset() != ESP_OK) {
+          ESP_LOGW(TAG, "Process task WDT reset failed while idle");
+        }
+        last_wdt_reset_tick = xTaskGetTickCount();
+        continue;
+      }
+#else
+      if (xQueueReceive(ctx->queue, &packet, portMAX_DELAY) != pdTRUE) {
+        continue;
+      }
+#endif
+      samples[recv_count++] = packet.sample;
+    }
+
+    uint64_t const batch_start_us = static_cast<uint64_t>(esp_timer_get_time());
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+    SEGGER_SYSVIEW_MarkStart(0);
+#endif
+    (void)mpx.compute(samples.data(), recv_count);
+    mpx.floss();
+#if defined(CONFIG_APPTRACE_SV_ENABLE)
+    SEGGER_SYSVIEW_MarkStop(0);
+#endif
+    uint64_t const batch_end_us = static_cast<uint64_t>(esp_timer_get_time());
+
+    uint32_t const batch_compute_time_us = static_cast<uint32_t>(batch_end_us - batch_start_us);
+    uint32_t const e2e_latency_us = static_cast<uint32_t>(batch_end_us - packet.timestamp_us);
+
+    g_processed_samples.fetch_add(static_cast<uint32_t>(recv_count), std::memory_order_relaxed);
+    g_processed_batches.fetch_add(1U, std::memory_order_relaxed);
+    g_batch_compute_time_us_sum.fetch_add(batch_compute_time_us, std::memory_order_relaxed);
+    g_e2e_latency_us_sum.fetch_add(e2e_latency_us, std::memory_order_relaxed);
+    update_atomic_min(g_batch_compute_time_us_min, batch_compute_time_us);
+    update_atomic_max(g_batch_compute_time_us_max, batch_compute_time_us);
+    update_atomic_min(g_e2e_latency_us_min, e2e_latency_us);
+    update_atomic_max(g_e2e_latency_us_max, e2e_latency_us);
+
+    uint16_t const profile_len = mpx.get_profile_len();
+    uint16_t const floss_probe_index = compute_floss_probe_index(profile_len);
+    float const *floss_profile = mpx.get_floss();
+
+    float const floss_value = (profile_len > 0U) ? floss_profile[floss_probe_index] : 0.0F;
+
+    if (floss_value <= FLOSS_ALERT_THRESHOLD) {
+      ESP_LOGW(TAG, "ALERT: floss[%u]=%.5f <= %.5f (ts=%llu)", floss_probe_index, floss_value, FLOSS_ALERT_THRESHOLD,
+               static_cast<unsigned long long>(packet.timestamp_us));
+    }
+
+#if APP_DEBUG_OUTPUT
+    debug_counter += recv_count;
+    if (debug_counter >= DEBUG_LOG_EVERY_N_SAMPLES) {
+      debug_counter = 0U;
+      ESP_LOGI(TAG, "dbg: source=%s sample=%.5f floss[%u]=%.5f ts=%llu", ctx->source->name(), samples[recv_count - 1U],
+               floss_probe_index, floss_value, static_cast<unsigned long long>(packet.timestamp_us));
+    }
+#endif
+
+#if SERIAL_PLOT_MODE
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
+    uint16_t min_floss_index = 0U;
+    float min_floss_value = 0.0F;
+    uint16_t const min_search_len = (profile_len > kWindowSize) ? static_cast<uint16_t>(profile_len - kWindowSize) : 0U;
+    uint16_t const data_buffer_mid = static_cast<uint16_t>(mpx.get_buffer_size() / 2U);
+    uint16_t const min_search_start = (data_buffer_mid < min_search_len) ? data_buffer_mid : 0U;
+    if (min_search_len > 0U) {
+      min_floss_index = min_search_start;
+      min_floss_value = floss_profile[min_search_start];
+      for (uint16_t i = static_cast<uint16_t>(min_search_start + 1U); i < min_search_len; ++i) {
+        if (floss_profile[i] < min_floss_value) {
+          min_floss_value = floss_profile[i];
+          min_floss_index = i;
+        }
       }
     }
+#endif
 
-    if (read_line > 8900) {
-      break;
+    for (uint16_t i = 0U; i < recv_count; ++i) {
+      serial_plot_counter++;
+      if (serial_plot_counter >= SERIAL_PLOT_EVERY_N) {
+        serial_plot_counter = 0U;
+#if SERIAL_PLOT_TELEPLOT_FORMAT
+        std::printf(">sample:%.6f\n", samples[i]);
+        std::printf(">floss:%.6f\n", floss_value);
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
+        std::printf(">min_floss_index:%u\n", static_cast<unsigned>(min_floss_index));
+        std::printf(">min_floss_value:%.6f\n", min_floss_value);
+#endif
+#else
+#if SERIAL_PLOT_INCLUDE_MIN_FLOSS
+        std::printf("%.6f,%.6f,%u,%.6f\n", samples[i], floss_value, static_cast<unsigned>(min_floss_index),
+                    min_floss_value);
+#else
+        std::printf("%.6f,%.6f\n", samples[i], floss_value);
+#endif
+#endif
+      }
     }
+#endif
 
-    // std::cout << values[0] << std::endl;
+#if LOG_TO_SD_ENABLED
+    if (ctx->sd_service->is_mounted()) {
+      float const latest_sample = samples[recv_count - 1U];
+      char log_line[160] = {0};
+      std::snprintf(log_line, sizeof(log_line), "ts_us=%llu,sample=%.6f,floss[%u]=%.6f",
+                    static_cast<unsigned long long>(packet.timestamp_us), latest_sample, floss_probe_index,
+                    floss_value);
+      (void)ctx->sd_service->append_line("/sdcard/floss_debug.log", log_line);
+    }
+#endif
+
+#if defined(CONFIG_ESP_TASK_WDT_EN) || defined(CONFIG_ESP_TASK_WDT)
+    TickType_t const now_tick = xTaskGetTickCount();
+    if ((now_tick - last_wdt_reset_tick) >= wdt_reset_period_ticks) {
+      if (esp_task_wdt_reset() != ESP_OK) {
+        ESP_LOGW(TAG, "Process task WDT reset failed while active");
+      }
+      last_wdt_reset_tick = now_tick;
+    }
+#endif
   }
-  file.close();
 }
+
+void task_monitor(void *pv_parameters) {
+  auto *ctx = static_cast<RuntimeContext *>(pv_parameters);
+  (void)ctx;
+
+  uint32_t previous_produced = 0U;
+  uint32_t previous_processed = 0U;
+  uint32_t previous_batches = 0U;
+  uint64_t previous_batch_compute_sum_us = 0U;
+  uint64_t previous_e2e_latency_sum_us = 0U;
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+  uint32_t cpu_stats_call_count = 0U;
+  const uint32_t CPU_STATS_EVERY_N_CALLS = 4U; // Print CPU stats every ~6 seconds (4 calls * 1.5s)
+#endif
+
+  TickType_t previous_tick = xTaskGetTickCount();
+
+  for (;;) {
+    TickType_t const now_tick = xTaskGetTickCount();
+    uint32_t const period_ms = static_cast<uint32_t>((now_tick - previous_tick) * portTICK_PERIOD_MS);
+    previous_tick = now_tick;
+
+    UBaseType_t const queue_waiting = uxQueueMessagesWaiting(ctx->queue);
+    UBaseType_t const queue_available = uxQueueSpacesAvailable(ctx->queue);
+
+    update_atomic_max(g_queue_peak_samples, static_cast<uint32_t>(queue_waiting));
+
+    uint32_t const produced = g_produced_samples.load(std::memory_order_relaxed);
+    uint32_t const processed = g_processed_samples.load(std::memory_order_relaxed);
+    uint32_t const dropped = g_dropped_samples.load(std::memory_order_relaxed);
+    uint32_t const batches = g_processed_batches.load(std::memory_order_relaxed);
+    uint64_t const batch_compute_sum_us = g_batch_compute_time_us_sum.load(std::memory_order_relaxed);
+    uint64_t const e2e_latency_sum_us = g_e2e_latency_us_sum.load(std::memory_order_relaxed);
+
+    uint32_t const produced_delta = produced - previous_produced;
+    uint32_t const processed_delta = processed - previous_processed;
+    uint32_t const batches_delta = batches - previous_batches;
+    uint64_t const batch_compute_sum_delta = batch_compute_sum_us - previous_batch_compute_sum_us;
+    uint64_t const e2e_latency_sum_delta = e2e_latency_sum_us - previous_e2e_latency_sum_us;
+
+    previous_produced = produced;
+    previous_processed = processed;
+    previous_batches = batches;
+    previous_batch_compute_sum_us = batch_compute_sum_us;
+    previous_e2e_latency_sum_us = e2e_latency_sum_us;
+
+    float const period_s = (period_ms > 0U) ? (static_cast<float>(period_ms) / 1000.0F) : 1.0F;
+    float const produced_rate_hz = static_cast<float>(produced_delta) / period_s;
+    float const processed_rate_hz = static_cast<float>(processed_delta) / period_s;
+    float const proc_est_pct =
+        (period_ms > 0U) ? (static_cast<float>(batch_compute_sum_delta) / (static_cast<float>(period_ms) * 10.0F))
+                         : 0.0F;
+    float const batch_compute_avg_us =
+        (batches_delta > 0U) ? (static_cast<float>(batch_compute_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
+    float const e2e_latency_avg_us =
+        (batches_delta > 0U) ? (static_cast<float>(e2e_latency_sum_delta) / static_cast<float>(batches_delta)) : 0.0F;
+
+    ESP_LOGI(
+        TAG,
+        "mon: q_used=%u q_free=%u q_peak=%u produced=%u(%.1fHz) processed=%u(%.1fHz) dropped=%u batches=%u "
+        "proc_est=%.2f%% batch_us(avg/min/max)=%.1f/%u/%u e2e_us(avg/min/max)=%.1f/%u/%u stack(acq/proc/mon)=%u/%u/%u "
+        "heap8_free=%u heap8_largest=%u",
+        static_cast<unsigned>(queue_waiting), static_cast<unsigned>(queue_available),
+        static_cast<unsigned>(g_queue_peak_samples.load(std::memory_order_relaxed)), static_cast<unsigned>(produced),
+        produced_rate_hz, static_cast<unsigned>(processed), processed_rate_hz, static_cast<unsigned>(dropped),
+        static_cast<unsigned>(batches), proc_est_pct, batch_compute_avg_us,
+        static_cast<unsigned>(g_batch_compute_time_us_min.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(g_batch_compute_time_us_max.load(std::memory_order_relaxed)), e2e_latency_avg_us,
+        static_cast<unsigned>(g_e2e_latency_us_min.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(g_e2e_latency_us_max.load(std::memory_order_relaxed)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_acq)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_proc)),
+        static_cast<unsigned>(uxTaskGetStackHighWaterMark(g_task_mon)),
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+
+    // Print per-task CPU load statistics (only if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS enabled)
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+    cpu_stats_call_count++;
+    if (cpu_stats_call_count >= CPU_STATS_EVERY_N_CALLS) {
+      cpu_stats_call_count = 0U;
+#if defined(CONFIG_FREERTOS_USE_TRACE_FACILITY)
+      log_task_cpu_load_compact();
+#else
+      ESP_LOGW(TAG, "cpu: CONFIG_FREERTOS_USE_TRACE_FACILITY is disabled");
+#endif
+    }
+#endif
+
+    vTaskDelay(pdMS_TO_TICKS(DEBUG_MONITOR_PERIOD_MS));
+  }
+}
+} // namespace
+
+extern "C" void app_main(void) {
+  esp_log_level_set(TAG, MAIN_LOG_LEVEL);
+
+  ESP_LOGI(TAG, "Booting false.alarm production pipeline");
+  ESP_LOGI(TAG, "Sampling=%d Hz, window=%u, history=%u", SAMPLING_RATE_HZ, kWindowSize, kHistorySamples);
+
+#if (SIGNAL_SOURCE_KIND == 0) || (LOG_TO_SD_ENABLED == 1)
+  SdCardService sd_service;
+#endif
+
+  std::unique_ptr<ISignalSource> signal_source;
+
+#if SIGNAL_SOURCE_KIND == 0
+  signal_source = std::make_unique<SdCsvSignalSource>(sd_service);
+#elif SIGNAL_SOURCE_KIND == 1
+  signal_source = std::make_unique<AnalogSignalSource>();
+#elif SIGNAL_SOURCE_KIND == 2
+  signal_source = std::make_unique<I2cSensorSignalSource>();
+#else
+#error "Invalid SIGNAL_SOURCE_KIND. Valid values: 0=SD CSV, 1=Analog ADC, 2=I2C Sensor"
+#endif
+
+  if (signal_source == nullptr) {
+    ESP_LOGE(TAG, "Signal source factory returned null");
+    return;
+  }
+
+#if (SIGNAL_SOURCE_KIND == 0) || (LOG_TO_SD_ENABLED == 1)
+  {
+    esp_err_t const mount_ret = sd_service.mount();
+    if (mount_ret != ESP_OK) {
+      ESP_LOGE(TAG, "Cannot continue without SD card (%s)", esp_err_to_name(mount_ret));
+      return;
+    }
+  }
+#endif
+
+  esp_err_t const source_init_ret = signal_source->init();
+  if (source_init_ret != ESP_OK) {
+    ESP_LOGE(TAG, "Signal source init failed for %s (%s)", signal_source->name(), esp_err_to_name(source_init_ret));
+    return;
+  }
+
+  QueueHandle_t const sample_queue =
+      xQueueCreate(static_cast<UBaseType_t>(RING_BUFFER_CAPACITY_SAMPLES), sizeof(SignalPacket));
+  if (sample_queue == nullptr) {
+    ESP_LOGE(TAG, "Failed to create sample queue");
+    return;
+  }
+
+  RuntimeContext runtime_ctx;
+  runtime_ctx.queue = sample_queue;
+  runtime_ctx.source = signal_source.get();
+#if LOG_TO_SD_ENABLED
+  runtime_ctx.sd_service = &sd_service;
+#endif
+
+  BaseType_t const acq_res = xTaskCreatePinnedToCore(task_acquire_signal, "AcquireSignal", TASK_ACQ_STACK_BYTES,
+                                                     &runtime_ctx, TASK_ACQ_PRIORITY, &g_task_acq, TASK_ACQ_CORE);
+  if (acq_res != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create acquisition task");
+    return;
+  }
+
+  BaseType_t const proc_res = xTaskCreatePinnedToCore(task_process_signal, "ProcessSignal", TASK_PROC_STACK_BYTES,
+                                                      &runtime_ctx, TASK_PROC_PRIORITY, &g_task_proc, TASK_PROC_CORE);
+  if (proc_res != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create processing task");
+    return;
+  }
+
+#if ENABLE_MONITOR_TASK
+  BaseType_t const mon_res = xTaskCreatePinnedToCore(task_monitor, "MonitorRuntime", TASK_MON_STACK_BYTES, &runtime_ctx,
+                                                     TASK_MON_PRIORITY, &g_task_mon, TASK_MON_CORE);
+  if (mon_res != pdPASS) {
+    ESP_LOGW(TAG, "Monitor task not created");
+  }
+#endif
+
+  ESP_LOGI(TAG, "Pipeline started: acquisition(core=%d) processing(core=%d)", TASK_ACQ_CORE, TASK_PROC_CORE);
+
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(10000));
+  }
+}
+
 #endif

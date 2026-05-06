@@ -4,24 +4,26 @@
 
 #include "Mpx.hpp"
 
+static const char TAG[] = "mpx";
+
 namespace MatrixProfile {
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : window_size_(window_size), ez_(ez), time_constraint_(time_constraint), buffer_size_(buffer_size),
-      buffer_start_((int16_t)buffer_size), profile_len_(buffer_size - window_size_ + 1U), range_(profile_len_ - 1U),
-      exclusion_zone_((uint16_t)(roundf((float)window_size_ * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
-      data_buffer_((float *)calloc(buffer_size_ + 1U, sizeof(float))),
-      vmatrix_profile_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vprofile_index_((int16_t *)calloc(profile_len_ + 1U, sizeof(int16_t))),
-      floss_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      iac_((float *)calloc(profile_len_ + 1U, sizeof(float))), vmmu_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vsig_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vddf_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vddg_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vww_((float *)calloc(window_size_ + 1U, sizeof(float))) {
+      buffer_start_(static_cast<int16_t>(buffer_size)), profile_len_(buffer_size - window_size_ + 1U),
+      range_(profile_len_ - 1U),
+      exclusion_zone_(
+          static_cast<uint16_t>(roundf(static_cast<float>(window_size_) * ez_ + __FLT_EPSILON__) + 1.0F)), // -V2004
+      data_buffer_(std::make_unique<float[]>(buffer_size_ + 1U)),
+      vmatrix_profile_(std::make_unique<float[]>(profile_len_ + 1U)),
+      vprofile_index_(std::make_unique<int16_t[]>(profile_len_ + 1U)),
+      floss_(std::make_unique<float[]>(profile_len_ + 1U)), iac_(std::make_unique<float[]>(profile_len_ + 1U)),
+      vmmu_(std::make_unique<float[]>(profile_len_ + 1U)), vsig_(std::make_unique<float[]>(profile_len_ + 1U)),
+      vddf_(std::make_unique<float[]>(profile_len_ + 1U)), vddg_(std::make_unique<float[]>(profile_len_ + 1U)),
+      vww_(std::make_unique<float[]>(window_size_ + 1U)) {
 
   // change the default value to 0
 
-  if (vmatrix_profile_ != nullptr && vprofile_index_ != nullptr) {
+  if (vmatrix_profile_ && vprofile_index_) {
     for (uint16_t i = 0U; i < profile_len_; i++) {
       vmatrix_profile_[i] = -1000000.0F;
       vprofile_index_[i] = -1;
@@ -32,7 +34,7 @@ Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const u
   this->prune_buffer();
 }
 
-void Mpx::movmean() {
+void Mpx::movmean_() {
 
   float accum = this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -47,11 +49,11 @@ void Mpx::movmean() {
   }
 
   if (resid > 0.001F) {
-    printf("movsum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    LOG_DEBUG(TAG, "movsum: Residual value is large. Some precision may be lost. res = %.2f", resid);
   }
 
   movsum = accum + resid;
-  this->vmmu_[buffer_start_] = (float)(movsum / (float)this->window_size_);
+  this->vmmu_[buffer_start_] = movsum / static_cast<float>(this->window_size_);
 
   for (uint16_t i = (this->window_size_ + buffer_start_); i < this->buffer_size_; i++) {
     float const m = this->data_buffer_[i - this->window_size_];
@@ -65,14 +67,14 @@ void Mpx::movmean() {
     resid = resid + ((p - (accum - t)) + (n - t));
 
     movsum = accum + resid;
-    this->vmmu_[i - this->window_size_ + 1U] = (float)(movsum / (float)this->window_size_);
+    this->vmmu_[i - this->window_size_ + 1U] = movsum / static_cast<float>(this->window_size_);
   }
 
   this->last_accum_ = accum;
   this->last_resid_ = resid;
 }
 
-void Mpx::movsig() {
+void Mpx::movsig_() {
 
   float accum = this->data_buffer_[buffer_start_] * this->data_buffer_[buffer_start_];
   float resid = 0.0F;
@@ -87,20 +89,21 @@ void Mpx::movsig() {
   }
 
   if (resid > 0.001F) {
-    printf("mov2sum: Residual value is large. Some precision may be lost. res = %.2f\n", resid);
+    LOG_DEBUG(TAG, "mov2sum: Residual value is large. Some precision may be lost. res = %.2f", resid);
   }
 
   mov2sum = accum + resid;
-  float const psig = mov2sum - this->vmmu_[buffer_start_] * this->vmmu_[buffer_start_] * (float)this->window_size_;
+  float const psig =
+      mov2sum - this->vmmu_[buffer_start_] * this->vmmu_[buffer_start_] * static_cast<float>(this->window_size_);
 
   // For sd > 1.19e-7; window 25 -> sig will be <= 1.68e+6 (psig >= 3.54e-13) and for window 350 -> sig will be
   // <= 4.5e+5 (psig >= 4.94e-12) For sd < 100; window 25 -> sig will be >= 0.002 (psig <= 25e4) and for window 350 ->
   // sig will be >= 0.0005 (psig <= 4e6)
 
-  if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
+  if (psig > __FLT_EPSILON__) {
     this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
   } else {
-    printf("DEBUG: psig1 precision, %.3f\n", psig);
+    LOG_DEBUG(TAG, "DEBUG: psig1 precision, %.3f", psig);
     this->vsig_[buffer_start_] = -1.0F;
   }
 
@@ -115,12 +118,12 @@ void Mpx::movsig() {
     resid = resid + ((p - (accum - t)) + (n - t));
     mov2sum = accum + resid;
     float const ppsig = mov2sum - this->vmmu_[i - this->window_size_ + 1U] * this->vmmu_[i - this->window_size_ + 1U] *
-                                      (float)this->window_size_;
+                                      static_cast<float>(this->window_size_);
 
-    if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
+    if (ppsig > __FLT_EPSILON__) {
       this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
     } else {
-      printf("DEBUG: ppsig precision, %.3f\n", ppsig);
+      LOG_DEBUG(TAG, "DEBUG: ppsig precision, %.3f", ppsig);
       this->vsig_[i - this->window_size_ + 1U] = -1.0F;
     }
   }
@@ -129,27 +132,25 @@ void Mpx::movsig() {
   this->last_resid2_ = resid;
 }
 
-void Mpx::muinvn(uint16_t size) {
+void Mpx::muinvn_(uint16_t size) {
 
   if (size == 0U) {
-    movmean();
-    movsig();
+    movmean_();
+    movsig_();
     return;
   }
 
   uint16_t const j = this->profile_len_ - size;
 
-  // update 1 step
-  for (uint16_t i = 0U; i < j; i++) {
-    vmmu_[i] = vmmu_[i + size];
-    vsig_[i] = vsig_[i + size];
-  }
+  // update 1 step - use memmove for optimized bulk copy
+  std::memmove(vmmu_.get(), vmmu_.get() + size, j * sizeof(float));
+  std::memmove(vsig_.get(), vsig_.get() + size, j * sizeof(float));
 
   // compute new mmu sig
-  float accum = this->last_accum_; // NOLINT(misc-const-correctness) - this variable can't be const
-  float accum2 = this->last_accum2_; // NOLINT(misc-const-correctness) - this variable can't be const
-  float resid = this->last_resid_; // NOLINT(misc-const-correctness) - this variable can't be const
-  float resid2 = this->last_resid2_; // NOLINT(misc-const-correctness) - this variable can't be const
+  float accum = this->last_accum_;   // OLINT(misc-const-correctness) - this variable can't be const
+  float accum2 = this->last_accum2_; // OLINT(misc-const-correctness) - this variable can't be const
+  float resid = this->last_resid_;   // OLINT(misc-const-correctness) - this variable can't be const
+  float resid2 = this->last_resid2_; // OLINT(misc-const-correctness) - this variable can't be const
 
   for (uint16_t i = j; i < profile_len_; i++) {
     /* mean */
@@ -162,7 +163,7 @@ void Mpx::muinvn(uint16_t size) {
     accum = p + n;
     float t = accum - p;
     resid = resid + ((p - (accum - t)) + (n - t));
-    vmmu_[i] = (float)((accum + resid) / (float)window_size_);
+    vmmu_[i] = (accum + resid) / static_cast<float>(window_size_);
 
     /* sig */
     m = data_buffer_[i - 1] * data_buffer_[i - 1];
@@ -175,11 +176,11 @@ void Mpx::muinvn(uint16_t size) {
     t = accum2 - p;
     resid2 = resid2 + ((p - (accum2 - t)) + (n - t));
 
-    float const psig = (accum2 + resid2) - vmmu_[i] * vmmu_[i] * (float)window_size_;
-    if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
+    float const psig = (accum2 + resid2) - vmmu_[i] * vmmu_[i] * static_cast<float>(window_size_);
+    if (psig > __FLT_EPSILON__) {
       vsig_[i] = 1.0F / sqrtf(psig);
     } else {
-      printf("DEBUG: psig precision, %.3f\n", psig);
+      LOG_DEBUG(TAG, "DEBUG: psig precision, %.3f", psig);
       vsig_[i] = -1.0F;
     }
   }
@@ -190,23 +191,21 @@ void Mpx::muinvn(uint16_t size) {
   this->last_resid2_ = resid2;
 }
 
-bool Mpx::new_data(const float *data, uint16_t size) {
+bool Mpx::new_data_(const float *data, uint16_t size) {
 
   bool first = true;
 
   if ((2U * size) > buffer_size_) {
-    printf("Data size is too large\n");
+    LOG_DEBUG(TAG, "%s", "Data size is too large");
     return false;
   } else if (size < (window_size_) && buffer_used_ < window_size_) {
-    printf("Data size is too small\n");
+    LOG_DEBUG(TAG, "%s", "Data size is too small");
     return false;
   } else {
     if ((buffer_start_ != buffer_size_) || buffer_used_ > 0U) {
       first = false;
-      // we must shift data
-      for (uint16_t i = 0U; i < (buffer_size_ - size); i++) {
-        this->data_buffer_[i] = this->data_buffer_[size + i];
-      }
+      // we must shift data - use memmove for optimized bulk copy
+      std::memmove(this->data_buffer_.get(), this->data_buffer_.get() + size, (buffer_size_ - size) * sizeof(float));
       // then copy
       for (uint16_t i = 0U; i < size; i++) {
         this->data_buffer_[(buffer_size_ - size + i)] = data[i];
@@ -219,7 +218,7 @@ bool Mpx::new_data(const float *data, uint16_t size) {
     }
 
     buffer_used_ += size;
-    buffer_start_ = (int16_t)(buffer_start_ - size);
+    buffer_start_ = static_cast<int16_t>(buffer_start_ - size);
 
     if (buffer_used_ > buffer_size_) {
       buffer_used_ = buffer_size_;
@@ -233,15 +232,17 @@ bool Mpx::new_data(const float *data, uint16_t size) {
   return first;
 }
 
-void Mpx::mp_next(uint16_t size) {
+void Mpx::mp_next_(uint16_t size) {
 
   uint16_t const j = this->profile_len_ - size;
 
-  // update 1 step
-  for (uint16_t i = 0; i < j; i++) {
-    vmatrix_profile_[i] = vmatrix_profile_[i + size];
+  // update 1 step - use memmove for optimized bulk copy
+  std::memmove(vmatrix_profile_.get(), vmatrix_profile_.get() + size, j * sizeof(float));
+  std::memmove(vprofile_index_.get(), vprofile_index_.get() + size, j * sizeof(int16_t));
 
-    vprofile_index_[i] = (int16_t)(vprofile_index_[i + size] - size); // the index must be reduced
+  // adjust indexes after shift
+  for (uint16_t i = 0; i < j; i++) {
+    vprofile_index_[i] = static_cast<int16_t>(vprofile_index_[i] - size);
 
     // avoid too negative values
     if (vprofile_index_[i] < -1) {
@@ -255,7 +256,7 @@ void Mpx::mp_next(uint16_t size) {
   }
 }
 
-void Mpx::ddf(uint16_t size) {
+void Mpx::ddf_(uint16_t size) {
   // differentials have 0 as their first entry. This simplifies index
   // calculations slightly and allows us to avoid special "first line"
   // handling.
@@ -263,10 +264,9 @@ void Mpx::ddf(uint16_t size) {
   uint16_t start = buffer_start_;
 
   if (size > 0U) {
-    // shift data
-    for (uint16_t i = buffer_start_; i < (range_ - size); i++) {
-      this->vddf_[i] = this->vddf_[i + size];
-    }
+    // shift data - use memmove for optimized bulk copy
+    std::memmove(this->vddf_.get() + buffer_start_, this->vddf_.get() + buffer_start_ + size,
+                 (range_ - size - buffer_start_) * sizeof(float));
 
     start = (range_ - size);
   }
@@ -279,7 +279,7 @@ void Mpx::ddf(uint16_t size) {
   this->vddf_[range_] = 0.0F;
 }
 
-void Mpx::ddg(uint16_t size) {
+void Mpx::ddg_(uint16_t size) {
   // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
   // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
   // window)
@@ -287,10 +287,9 @@ void Mpx::ddg(uint16_t size) {
   uint16_t start = buffer_start_;
 
   if (size > 0U) {
-    // shift data
-    for (uint16_t i = buffer_start_; i < (range_ - size); i++) {
-      this->vddg_[i] = this->vddg_[i + size];
-    }
+    // shift data - use memmove for optimized bulk copy
+    std::memmove(this->vddg_.get() + buffer_start_, this->vddg_.get() + buffer_start_ + size,
+                 (range_ - size - buffer_start_) * sizeof(float));
 
     start = (range_ - size);
   }
@@ -303,7 +302,7 @@ void Mpx::ddg(uint16_t size) {
   this->vddg_[range_] = 0.0F;
 }
 
-void Mpx::ww_s() {
+void Mpx::ww_s_() {
   for (uint16_t i = 0U; i < window_size_; i++) {
     this->vww_[i] = (this->data_buffer_[range_ + i] - this->vmmu_[range_]);
   }
@@ -311,49 +310,95 @@ void Mpx::ww_s() {
 
 void Mpx::prune_buffer() {
   // prune buffer
-  srand(time(nullptr));
+  // data_buffer_[0] = 0.001F;
 
-  data_buffer_[0] = 0.001F;
+  // for (uint16_t i = 1U; i < buffer_size_; i++) {
+  //   float mock = static_cast<float>((RAND() % 1000) - 500);
+  //   mock /= 1000.0F;
+  //   data_buffer_[i] = data_buffer_[i - 1] + mock;
+  // }
 
-  for (uint16_t i = 1U; i < buffer_size_; i++) {
-    float mock = (float)((rand() % 1000) - 500);
-    mock /= 1000.0F;
-    data_buffer_[i] = data_buffer_[i - 1] + mock;
+  // prune buffer - Initialize with sinusoidal pattern for reproducible results
+  // Period of 100 samples matches typical window_size
+  const float period = 100.0F;
+  const float two_pi = 2.0F * 3.14159265358979323846F; // M_PI replacement
+
+  for (uint16_t i = 0U; i < buffer_size_; i++) {
+    data_buffer_[i] = sinf(two_pi * static_cast<float>(i) / period);
   }
+
   buffer_used_ = buffer_size_;
   buffer_start_ = 0;
-  muinvn(0U);
-  ddf(0U);
-  ddg(0U);
+  muinvn_(0U);
+  ddf_(0U);
+  ddg_(0U);
 }
 
+/**
+ * @brief Compute Ideal Arc Counts (IAC) using analytical Kumaraswamy distribution
+ *
+ * Generates the expected arc count distribution used to normalize FLOSS and
+ * correct edge effects.
+ *
+ * @note Implementation approach:
+ * - Uses the analytical Kumaraswamy distribution for ideal arc counts
+ * - Produces deterministic output (no pseudo-random sampling noise)
+ * - Keeps legacy Monte Carlo code below as a commented reference
+ *
+ * @note Difference from R reference (fluss.R):
+ * R uses analytical Kumaraswamy distribution: a * b * x^(a-1) * (1 - x^a)^(b-1) * cac_size / 4.035477
+ *   where a = 1.939274, b = 1.698150 (for mp_offset > 0, the streaming case)
+ * C++ also uses the analytical form in this implementation.
+ */
 void Mpx::floss_iac_() {
 
-  uint16_t *mpi = nullptr;
+  // uint16_t *mpi = nullptr;
 
-  mpi = ((uint16_t *)calloc(this->profile_len_ + 1U, sizeof(uint16_t)));
+  // mpi = static_cast<uint16_t*>(calloc(this->profile_len_ + 1U, sizeof(uint16_t)));
 
-  if(mpi == nullptr) {
-    printf("Memory allocation failed\n");
-    return;
-  }
+  // if (mpi == nullptr) {
+  //   LOG_DEBUG(TAG, "Memory allocation failed");
+  //   return;
+  // }
 
-  srand(time(nullptr));
+  // for (uint16_t i = 0U; i < this->profile_len_; i++) {
+  //   this->iac_[i] = 0.0F;
+  // }
+
+  // ========== KUMARASWAMY DISTRIBUTION (Analytical) ==========
+  // Instead of Monte Carlo simulation, use the analytical Kumaraswamy distribution
+  // which provides the theoretical ideal arc counts distribution
+  const float a = 1.939274f;
+  const float b = 1.698150f;
+  const float cac_size = static_cast<float>(this->profile_len_);
+  const float normalization = 4.035477f;
 
   for (uint16_t i = 0U; i < this->profile_len_; i++) {
-    this->iac_[i] = 0.0F;
+    float x = static_cast<float>(i) / cac_size;
+
+    // Kumaraswamy distribution formula:
+    // iac = a * b * x^(a-1) * (1 - x^a)^(b-1) * cac_size / 4.035477
+    float x_a_minus_1 = powf(x, a - 1.0f);
+    float one_minus_x_a = 1.0f - powf(x, a);
+    float one_minus_x_a_b_minus_1 = powf(one_minus_x_a, b - 1.0f);
+
+    this->iac_[i] = a * b * x_a_minus_1 * one_minus_x_a_b_minus_1 * cac_size / normalization;
   }
 
+  // ========== OLD MONTE CARLO IMPLEMENTATION (COMMENTED OUT) ==========
+  // Previous approach using Monte Carlo simulation with random indices
+  // Results should be very similar to the Kumaraswamy distribution above
+  /*
   for (uint16_t k = 0U; k < 10; k++) { // repeat 10 times to smooth the result
     for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
-      mpi[i] = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
+      mpi[i] = (RAND() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
     }
 
     for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
       uint16_t const j = mpi[i];
 
       if (j >= this->profile_len_) {
-        printf("j >= this->profile_len_\n");
+        LOG_DEBUG(TAG, "%s", "j >= this->profile_len_");
         continue;
       }
       // RMP, i is always < j
@@ -361,56 +406,68 @@ void Mpx::floss_iac_() {
       this->iac_[j] -= 0.1F;
     }
   }
-  // cumsum
-  for (uint16_t i = 0U; i < this->range_; i++) {
-    this->iac_[i + 1U] += this->iac_[i];
-  }
+  */
+  // // cumsum
+  // for (uint16_t i = 0U; i < this->range_; i++) {
+  //   this->iac_[i + 1U] += this->iac_[i];
+  // }
 
-  free(mpi); // test for edit session
+  // free(mpi); // No longer needed with Kumaraswamy distribution
 }
 
-// cppcheck-suppress unusedFunction
+/**
+ * @brief FLOSS - Fast Low-cost Online Semantic Segmentation
+ *
+ * Computes corrected arc counts for semantic segmentation based on the matrix profile index.
+ *
+ * @note Implementation differences from R reference (fluss.R):
+ *
+ * 1. Arc Counting: This implementation assumes RMP (Right Matrix Profile) only, where i < j always.
+ *    The R reference uses min(i,j) and max(i,j) to handle both LMP and RMP.
+ *    Since this project only implements RMP, we can assume i < j and save CPU cycles.
+ *
+ * 2. Ideal Arc Counts: Uses analytical Kumaraswamy distribution in floss_iac_.
+ *    Formula: a * b * x^(a-1) * (1 - x^a)^(b-1) * cac_size / 4.035477
+ *    where a = 1.939274, b = 1.698150 (for streaming case with mp_offset > 0).
+ *    A legacy Monte Carlo variant is kept commented for historical reference.
+ *
+ * 3. Edge Correction: Uses window_size for boundary detection instead of exclusion_zone.
+ *    R: corrected_arc_counts[1:min(exclusion_zone, cac_size)] <- 1
+ *    C++: if (i < window_size_ || i > (profile_len_ - window_size_))
+ *    Behavior is similar for typical configurations where exclusion_zone ≈ window_size * ez.
+ */
+// ppcheck-suppress unusedFunction
 void Mpx::floss() {
 
   for (uint16_t i = 0U; i < this->profile_len_; i++) {
     this->floss_[i] = 0.0F;
   }
 
-  // srand(time(NULL));
-
   for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); i++) {
     int16_t const j = vprofile_index_[i];
 
     if (j >= this->profile_len_) {
-      printf("DEBUG: j >= this->profile_len_\n");
+      LOG_DEBUG(TAG, "%s", "DEBUG: j >= this->profile_len_");
       continue;
     }
 
     if (j < 0) {
       if (j < -1) {
-        printf("DEBUG: j < -1\n");
+        LOG_DEBUG(TAG, "%s", "DEBUG: j < -1");
       }
-      // printf("DEBUG: j < 0\n");
+      // LOG_DEBUG(TAG, "DEBUG: j < 0");
       // j = (rand() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
       // vprofile_index_[i] = j;
       continue;
     }
 
     if (j < i) {
-      printf("DEBUG: i = %d ; j = %d \n", i, j);
+      LOG_DEBUG(TAG, "DEBUG: i = %d ; j = %d ", i, j);
     }
     // RMP, i is always < j
     this->floss_[i] += 1.0F;
     this->floss_[j] -= 1.0F;
   }
-
-  // const float a = 1.939274;
-  // const float b = 1.69815;
-  // const float c = 4.035477;
-  ////  const float len = (float)this->profile_len_;
-  ////  const float x = 1.0F / len;
-  ////  const float llen = len * 1.1494F;
-  ////  float iac = 0.001F; // cppcheck-suppress unreadVariable
 
   // cumsum
   for (uint16_t i = 0U; i < this->range_; i++) {
@@ -418,12 +475,6 @@ void Mpx::floss() {
     if (i < this->window_size_ || i > (this->profile_len_ - this->window_size_)) {
       this->floss_[i] = 1.0F;
     } else {
-      // iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
-      // iac = 0.816057 * len * powf(i * x, 0.939274) * powf(1 - powf(i * x, 1.93927), 0.69815);
-      // iac = 0.8245 * powf(i * x, 0.94) * powf(1.0 - powf(i * x, 1.94), 0.7) * len;
-      //     // const float idx = (float)i * x;
-      //     // iac = powf(idx, 1.08F) * powf(1.0F - idx, 0.64F) * llen; // faster
-      // iac = a * b * powf(idx, (a - 1)) * powf(1 - powf(idx, a), (b - 1)) * len / 4.035477;
       if (this->floss_[i] > this->iac_[i]) {
         this->floss_[i] = 1.0F;
       } else {
@@ -431,29 +482,25 @@ void Mpx::floss() {
       }
     }
   }
-
-  // x <- seq(0, 1, length.out = cac_size)
-  //  mode <- 0.6311142 # best point to analyze the segment change
-  //  iac <- a * b * x^(a - 1) * (1 - x^a)^(b - 1) * cac_size / 4.035477
 }
 
-// cppcheck-suppress unusedFunction
+// ppcheck-suppress unusedFunction
 uint16_t Mpx::compute(const float *data, uint16_t size) {
 
-  bool const first = new_data(data, size); // store new data on buffer
+  bool const first = new_data_(data, size); // store new data on buffer
 
   if (first) {
-    muinvn(0U);
-    ddf(0U);
-    ddg(0U);
+    muinvn_(0U);
+    ddf_(0U);
+    ddg_(0U);
   } else {
-    muinvn(size);  // compute next mean and sig
-    ddf(size);     // compute next ddf
-    ddg(size);     // compute next ddg
-    mp_next(size); // shift MP
+    muinvn_(size);  // compute next mean and sig
+    ddf_(size);     // compute next ddf
+    ddg_(size);     // compute next ddg
+    mp_next_(size); // shift MP
   }
 
-  ww_s();
+  ww_s_();
 
   // if (time_constraint_ > 0) {
   //   diag_start = buffer_size_ - time_constraint_ - window_size_;
@@ -479,8 +526,8 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
     if (first) {
       off_min = range_ - i - 1;
     } else {
-      // cppcheck-suppress duplicateExpression
-      off_min = MAX(range_ - size, range_ - i - 1); // -V501
+      // ppcheck-suppress duplicateExpression
+      off_min = std::max(range_ - size, range_ - i - 1); // -V501
     }
 
     uint16_t const off_start = range_;
@@ -502,33 +549,22 @@ uint16_t Mpx::compute(const float *data, uint16_t size) {
       // RMP
       // min off_diag is 0; max off_diag is (diag_end-1) == (profile_len_ - exclusion_zone_ - 1)
       if (c_cmp > vmatrix_profile_[off_diag]) {
-        // printf("%f\n", c_cmp);
+        // LOG_DEBUG(TAG, "%f", c_cmp);
         vmatrix_profile_[off_diag] = c_cmp;
-        vprofile_index_[off_diag] = (int16_t)(offset); // + 1U);
+        vprofile_index_[off_diag] = static_cast<int16_t>(offset); // + 1U);
       }
     }
   }
 
   if (debug_wild_sig > 0U) {
-    ;
-    // printf("DEBUG: wild sig: %u\n", debug_wild_sig);
+    LOG_DEBUG(TAG, "DEBUG: wild sig: %u", debug_wild_sig);
   }
 
   return (this->buffer_size_ - this->buffer_used_);
 }
 
 Mpx::~Mpx() {
-  // free arrays
-  free(this->vww_);
-  free(this->vddg_);
-  free(this->vddf_);
-  free(this->vsig_);
-  free(this->vmmu_);
-  free(this->iac_);
-  free(this->vprofile_index_);
-  free(this->vmatrix_profile_);
-  free(this->data_buffer_);
-  free(this->floss_);
+  // std::unique_ptr automatically releases memory
 }
 
 } // namespace MatrixProfile
