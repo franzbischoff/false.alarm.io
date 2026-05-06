@@ -1,22 +1,24 @@
 # Phase 1 — Static Metrics
 
-**Date collected:** 2026-03-20
+**Date collected:** 2026-05-06
+
 **Toolchain:** ESP-IDF 5.5.3 / PlatformIO, GCC 14.2.0, C++17
+
 **Target hardware:** SparkFun ESP32 IoT RedBoard (ESP32, Xtensa LX6, 240 MHz, 4 MB Flash, 520 KB SRAM total)
 
 ---
 
 ## 1. Build Profiles
 
-Three configurations were compiled from the same source:
+Three release configurations were compiled from the same source for the optimization comparison:
 
 | Profile | `build_type` | Optimization | sdkconfig base | Notes |
 |---|---|---|---|---|
-| `esp32_prod` | release | `-Os` (default) | `sdkconfig.defaults.prod` | Balanced size/speed; offline IDF profile (no Wi-Fi/LWIP/TLS) |
-| `esp32_prod_fast` | release | `-O3 -DNDEBUG` | `sdkconfig.defaults.prod` | Speed-optimized; same offline IDF profile |
-| `esp32_demo` | debug | `-Og` (default) | `sdkconfig.defaults` | Full IDF components; debug symbols retained |
+| `esp32_prod_os` | release | `-Os` | `sdkconfig.defaults.prod` | Size-oriented release variant; offline IDF profile (no Wi-Fi/LWIP/TLS) |
+| `esp32_prod_o2` | release | `-O2` (default) | `sdkconfig.defaults.prod` | Current production baseline; same offline IDF profile |
+| `esp32_prod_o3` | release | `-O3` | `sdkconfig.defaults.prod` | Speed-focused variant; same offline IDF profile |
 
-All three profiles share the same algorithm parameters (Section 3) and FreeRTOS task configuration (Section 5).
+All three release profiles share the same algorithm parameters (Section 3) and FreeRTOS task configuration (Section 5). The debug-oriented `esp32_demo` profile remains available for instrumentation work, but it is not part of the size comparison below.
 
 ---
 
@@ -30,19 +32,21 @@ Size measured with `pio run -e <env> --target size` on a cached build. ELF secti
 
 | Profile | `.text` (B) | `.data` (B) | `.bss` (B) | ELF total (B) | Flash footprint (B) | SRAM static (B) |
 |---|---:|---:|---:|---:|---:|---:|
-| `esp32_prod` (`-Os`) | 206,811 | 76,128 | 2,449 | 285,388 | 282,939 | 78,577 |
-| `esp32_prod_fast` (`-O3`) | 233,663 | 60,604 | 2,457 | 296,724 | 294,267 | 63,061 |
-| `esp32_demo` (debug) | 230,785 | 80,388 | 2,465 | 313,638 | 311,173 | 82,853 |
+| `esp32_prod_os` (`-Os`) | 207,623 | 76,272 | 2,481 | 286,376 | 283,895 | 78,753 |
+| `esp32_prod_o2` (`-O2`) | 208,051 | 76,320 | 2,481 | 286,852 | 284,371 | 78,801 |
+| `esp32_prod_o3` (`-O3`) | 208,175 | 76,320 | 2,481 | 286,976 | 284,495 | 78,801 |
 
 **Flash footprint** = `.text` + `.data`.
+
 **SRAM static** = `.data` + `.bss` (resident in RAM from boot).
+
 
 **Key observations:**
 
-- `-O3` expands `.text` by +26,852 bytes (+13.0%) relative to `-Os`, reflecting code duplication from inlining and loop unrolling.
-- `-O3` reduces `.data` by 15,524 bytes (−20.4%) vs `-Os`; the compiler promotes more read-only initialised data to `const`/`.rodata` in text.
-- The debug binary (full IDF, no LTO, `-Og`) has the largest total and Flash footprint, confirming that release profiles yield significant size savings even when instrumentation is disabled.
-- Total Flash budget used by the application binary: **27–30%** of a 1 MB app partition (see Section 6).
+- `esp32_prod_o2` is nearly size-neutral relative to `esp32_prod_os`: +476 bytes of Flash footprint and +48 bytes of SRAM static.
+- `esp32_prod_o3` is now a near-pure optimization comparison against `esp32_prod_o2`: +124 bytes of Flash footprint with identical `.data` and `.bss`.
+- The main static delta between `-O2` and `-O3` is a small `.text` increase (+124 bytes) for `esp32_prod_o3`.
+- Total Flash budget used by the release application binaries remains **27.0–27.1%** of a 1 MB app partition (see Section 6).
 
 ---
 
@@ -87,13 +91,13 @@ The `MatrixProfile::Mpx` constructor allocates ten contiguous heap arrays via `s
 
 ### General formula
 
-$$H(n, m) = 4(n+1) + \bigl[7 \cdot 4 + 2\bigr](p+1) + 4(m+1)$$
+$$H(n, m) = 4(n+1) + \lbrack 7 \cdot 4 + 2 \rbrack(p+1) + 4(m+1)$$
 
 where $p = n - m + 1$, which simplifies to:
 
 $$H(n, m) = 34n - 26m + 68 \quad \text{(bytes)}$$
 
-**Verification:** $34 \times 5000 - 26 \times 210 + 68 = 170{,}000 - 5{,}460 + 68 = 164{,}608$ ✓
+**Verification:** $34 \times 5000 - 26 \times 210 + 68 = 170{,}000 - 5{,}460 + 68 = 164{,}608$
 
 The formula is valid for any $n > m$. The coefficient of $n$ (34) dominates: each additional second of history at 250 Hz adds $34 \times 250 = 8{,}500$ bytes (~8.3 KB).
 
@@ -115,20 +119,23 @@ All allocations occur once at startup; no heap activity in the processing loop.
 ### Inter-task queue (FreeRTOS `xQueueCreate`)
 
 `SignalPacket` = `{float sample; uint64_t timestamp_us}`.
+
 With standard ABI padding on Xtensa LX6: `sizeof(SignalPacket)` = 16 bytes (4 B sample + 4 B padding + 8 B timestamp).
 
 | Profile | Queue capacity (packets) | Queue buffer (B) |
 |---|---:|---:|
-| `esp32_prod` | 500 | 8,000 |
-| `esp32_prod_fast` | 500 | 8,000 |
+| `esp32_prod_os` | 500 | 8,000 |
+| `esp32_prod_o2` | 500 | 8,000 |
+| `esp32_prod_o3` | 500 | 8,000 |
 | `esp32_demo` | 1,024 | 16,384 |
 
 ### Total application heap at startup
 
 | Profile | Mpx object (B) | Task stacks (B) | Queue (B) | **Total (B)** | **Total (KB)** |
 |---|---:|---:|---:|---:|---:|
-| `esp32_prod` | 164,608 | 30,720 | 8,000 | **203,328** | **198.6** |
-| `esp32_prod_fast` | 164,608 | 30,720 | 8,000 | **203,328** | **198.6** |
+| `esp32_prod_os` | 164,608 | 30,720 | 8,000 | **203,328** | **198.6** |
+| `esp32_prod_o2` | 164,608 | 30,720 | 8,000 | **203,328** | **198.6** |
+| `esp32_prod_o3` | 164,608 | 30,720 | 8,000 | **203,328** | **198.6** |
 | `esp32_demo` | 164,608 | 30,720 | 16,384 | **211,712** | **206.75** |
 
 The ESP32 has 520 KB of internal SRAM; after the FreeRTOS kernel, IDF components, and application static data (Section 2), typical free heap at application start is approximately 270–290 KB. The application therefore consumes ~69–72% of the available runtime heap, leaving ~80–90 KB as headroom.
@@ -144,7 +151,7 @@ The ESP32 has 520 KB of internal SRAM; after the FreeRTOS kernel, IDF components
 | `factory` (app) | app/factory | 0x20000 | 1,024 KB |
 | `spiffs` | data/spiffs | 0x120000 | 896 KB |
 
-The production firmware uses **27.7%** (`esp32_prod`, 282,939 B) to **28.7%** (`esp32_prod_fast`, 294,267 B) of the 1,024 KB app partition, leaving substantial space for future features.
+The release firmware variants use **27.0%** (`esp32_prod_os`, 283,895 B) to **27.1%** (`esp32_prod_o3`, 284,495 B) of the 1,024 KB app partition, leaving substantial space for future features.
 
 ---
 
@@ -177,19 +184,19 @@ The production firmware uses **27.7%** (`esp32_prod`, 282,939 B) to **28.7%** (`
 
 ## 8. Summary Table for Publication
 
-| Metric | `esp32_prod` | `esp32_prod_fast` | `esp32_demo` |
+| Metric | `esp32_prod_os` | `esp32_prod_o2` | `esp32_prod_o3` |
 |---|---|---|---|
-| Optimisation | `-Os` | `-O3` | `-Og` (debug) |
-| Flash footprint | 282,939 B (276.3 KB) | 294,267 B (287.4 KB) | 311,173 B (303.9 KB) |
-| SRAM static | 78,577 B (76.7 KB) | 63,061 B (61.6 KB) | 82,853 B (80.9 KB) |
-| App heap (runtime) | 203,328 B (198.6 KB) | 203,328 B (198.6 KB) | 211,712 B (206.75 KB) |
-| Mpx object heap | 164,608 B (160.75 KB) — identical across profiles | | |
+| Optimisation | `-Os` | `-O2` | `-O3` |
+| Flash footprint | 283,895 B (277.2 KB) | 284,371 B (277.7 KB) | 284,495 B (277.8 KB) |
+| SRAM static | 78,753 B (76.9 KB) | 78,801 B (77.0 KB) | 78,801 B (77.0 KB) |
+| App heap (runtime) | 203,328 B (198.6 KB) | 203,328 B (198.6 KB) | 203,328 B (198.6 KB) |
+| Mpx object heap | 164,608 B (160.75 KB) | 164,608 B (160.75 KB) | 164,608 B (160.75 KB) |
 | Sampling rate | 250 Hz | 250 Hz | 250 Hz |
 | Window size $m$ | 210 | 210 | 210 |
 | History $T_h$ | 20 s | 20 s | 20 s |
 | Batch size $b$ | 128 | 128 | 128 |
-| Test suite (native) | 20/20 PASSED, 33 s | — | — |
-| Golden ref. tolerance | $\leq 10^{-5}$ | — | — |
+| Test suite (native) | 20/20 PASSED, 33 s | 20/20 PASSED, 33 s | 20/20 PASSED, 33 s |
+| Golden ref. tolerance | $\leq 10^{-5}$ | $\leq 10^{-5}$ | $\leq 10^{-5}$ |
 
 ---
 
@@ -197,7 +204,7 @@ The production firmware uses **27.7%** (`esp32_prod`, 282,939 B) to **28.7%** (`
 
 Date implemented: 2026-03-20
 
-Phase 2 instrumentation was added to the runtime pipeline in `src/main.cpp` and validated by compiling all three firmware profiles.
+Phase 2 instrumentation was added to the runtime pipeline in `src/main.cpp` and remains valid after the release-profile rename and rebuild.
 
 ### 9.1 Implemented metrics
 
@@ -222,27 +229,17 @@ The following online metrics are now collected continuously in the process task 
 
 ### 9.2 Monitor log format (new)
 
-The monitor line now includes:
+The monitor line includes:
 
 ```text
 mon: q_used=<u> q_free=<u> q_peak=<u> produced=<u>(<hz>Hz) processed=<u>(<hz>Hz) dropped=<u> batches=<u> batch_us(avg/min/max)=<f>/<u>/<u> e2e_us(avg/min/max)=<f>/<u>/<u> stack(acq/proc/mon)=<u>/<u>/<u> heap8_free=<u> heap8_largest=<u>
 ```
 
-### 9.3 Build validation after instrumentation
-
-All profiles compiled successfully after adding Phase 2 metrics:
-
-| Profile | Result | Runtime memory line from PlatformIO |
-|---|---|---|
-| `esp32_prod` | SUCCESS | RAM 13,908 B (4.2%), Flash 283,563 B (27.0%) |
-| `esp32_prod_fast` | SUCCESS | RAM 12,188 B (3.7%), Flash 295,111 B (28.1%) |
-| `esp32_demo` | SUCCESS | RAM 14,460 B (4.4%), Flash 311,917 B (29.7%) |
-
-### 9.4 Recommended experimental protocol (data collection)
+### 9.3 Recommended experimental protocol (data collection)
 
 To generate publishable runtime tables/figures from this instrumentation:
 
-1. Run each profile for 60 s in steady-state (`esp32_prod`, `esp32_prod_fast`, `esp32_demo`).
+1. Run each release profile for 60 s in steady-state (`esp32_prod_os`, `esp32_prod_o2`, `esp32_prod_o3`); include `esp32_demo` only if a debug reference is needed.
 2. Capture all `mon:` lines from serial monitor to CSV/text log.
 3. Compute per-profile statistics:
 	 - `produced` and `processed` mean rates (Hz)
@@ -252,9 +249,7 @@ To generate publishable runtime tables/figures from this instrumentation:
 	 - max `q_peak` and typical `q_used`
 4. Repeat at least 3 runs per profile and report mean ± std.
 
-This closes the implementation part of Phase 2; the remaining step is the experimental acquisition campaign and statistical aggregation.
-
-### 9.5 Steady-state aggregation (all profiles)
+### 9.4 Steady-state aggregation (all profiles)
 
 Data source: `report/phase2_runtime_summary.csv` (parsed from serial `mon:` logs after outlier removal; 3 runs per profile). Profile naming convention: `prod_os` = `-Os`, `prod_o2` = `-O2` (preferred production), `prod_o3` = `-O3`, `demo` = debug `-Og`.
 
@@ -271,11 +266,11 @@ Observations from the aggregated runs:
 
 - No dropped samples were observed in any profile across all parsed runs.
 - After outlier removal, produced throughput is tightly concentrated at 250 Hz (std ≤ 0.35 Hz) across all release profiles.
-- `prod_o2` and `prod_o3` show identical throughput and queue behaviour; `prod_o2` is preferred for its lower flash footprint.
+- `prod_o2` and `prod_o3` show effectively identical throughput and queue behaviour; `prod_o2` remains the validated production baseline and `prod_o3` differs only by a negligible static-size increase.
 - The jump from `-Os` to `-O2`/`-O3` reduces `batch_us` mean by ~38% (390 ms → 241 ms) and eliminates queue pressure (`q_peak` p95: 96 → 1).
 - `demo` (debug `-Og`) is the slowest profile: `batch_us` mean ~479 ms, highest queue pressure (`q_peak` p95 = 119).
 
-### 9.5.1 Release optimization A/B (`-Os` vs `-O2`)
+### 9.4.1 Release optimization A/B (`-Os` vs `-O2`)
 
 Data source: `report/phase2_o2_vs_os.csv` (3 runs/profile, after outlier removal).
 
@@ -286,18 +281,18 @@ Data source: `report/phase2_o2_vs_os.csv` (3 runs/profile, after outlier removal
 
 Observed build-size impact (same board/profile settings):
 
-- `esp32_prod` (`-Os`): RAM 13,908 B; Flash 283,595 B.
-- `esp32_prod_o2` (`-O2`): RAM 14,100 B; Flash 304,115 B.
-- Delta (`-O2` vs `-Os`): +192 B RAM, +20,520 B Flash.
+- `esp32_prod_os` (`-Os`): RAM 13,908 B; Flash 283,607 B.
+- `esp32_prod_o2` (`-O2`): RAM 13,908 B; Flash 284,083 B.
+- Delta (`-O2` vs `-Os`): +0 B RAM, +476 B Flash.
 
 Decision:
 
 - `-O2` was selected for `prod_o2` as the preferred production optimization level.
-- Rationale: substantial latency/headroom improvement (`batch_us` and `e2e_us`) with zero drops (~38% lower `batch_us` than `-Os`), at the cost of moderate flash growth still within budget.
+- Rationale: substantial latency/headroom improvement (`batch_us` and `e2e_us`) with zero drops (~38% lower `batch_us` than `-Os`), at a negligible static-size cost in the builds.
 
 ---
 
-### 9.5.2 Release optimization A/B (`-O2` vs `-O3`)
+### 9.4.2 Release optimization A/B (`-O2` vs `-O3`)
 
 Data source: `report/phase2_o2_vs_o3.csv` (3 runs/profile, after outlier removal).
 
@@ -308,29 +303,36 @@ Data source: `report/phase2_o2_vs_o3.csv` (3 runs/profile, after outlier removal
 
 Delta (`-O3` vs `-O2`): `batch_us` mean −208 µs (−0.09%), `e2e_us` mean −209 µs (−0.09%).
 
+Observed build-size impact (same board/profile settings):
+
+- `esp32_prod_o2` (`-O2`): RAM 13,908 B; Flash 284,083 B.
+- `esp32_prod_o3` (`-O3`): RAM 13,908 B; Flash 284,207 B.
+- Delta (`-O3` vs `-O2`): +0 B RAM, +124 B Flash.
+
 Decision:
 
 - `-O3` provides negligible latency improvement (~0.09%) over `-O2` on this workload.
-- `-O2` is retained as the preferred production profile: flash footprint is 294,267 B vs ~295,000+ B for `-O3`, and the marginal gain does not justify the additional code bloat from aggressive inlining and loop unrolling.
+- `-O3` carries a negligible static-size penalty over `-O2` in the aligned build configuration.
+- `-O2` is still retained as the preferred production baseline because the latency gain remains marginal (~0.09%) and does not justify changing the validated reference profile.
 
 ---
 
-## 9.6 Design decision: Batch size tuning
+## 9.5 Design decision: Batch size tuning
 
-**Empirical finding:** The matrix-profile algorithm's distance-profile computation (using incremental dot products) benefits significantly from batch amortization. Larger batches reduce context-switch overhead and improve CPU utilization, but must be balanced against queue latency.
+**Empirical finding:** The matrix-profile algorithm's distance-profile computation (using incremental dot products) benefits significantly from batch amortization. Batch size is influenced by `HISTORY_SIZE_S`: larger history buffers increase the time required to update the matrix profile, so smaller histories may make smaller batch sizes viable. Larger batches reduce context-switch overhead and improve CPU utilization, but must be balanced against queue latency.
 
 **Tuning strategy by profile:**
 
 - **Debug profile (`esp32_demo`):** `MPX_BATCH_SIZE=128` (512 ms at 250 Hz sampling rate)
-  - Debug mode with `-Og` optimization has lower single-batch throughput; requires larger batches to prevent producer–consumer queue starvation
-  - Empirical observation: even at 128-sample batches, debug achieves 249.67 Hz processed rate (vs 250.02 Hz acquired)
-  - Queue dynamics: peak occupancy 109 packets, mean occupancy 58.4 packets (out of 1024 capacity)
-  - Conclusion: 128-sample batch size is minimal for debug mode; smaller batches result in queue overflow
+  - Debug mode with `-Og` optimization has lower single-batch throughput; requires larger batches to prevent producer-consumer queue starvation
+  - Empirical observation: at 128-sample batches, debug averages 248.55 Hz processed rate with `q_peak` p95 = 119 packets (out of 1024 capacity)
+  - Conclusion: 128-sample batch size is the conservative debug setting; smaller batches were not retained in the validated baseline
 
-- **Release profiles (`esp32_prod`, `esp32_prod_fast`):** `MPX_BATCH_SIZE=128` (validated; smaller batches acceptable in principle, only tested with 64)
-  - Release optimization (`-O2`, `-O3`) provides sufficient single-batch throughput that smaller batches could perform without drops
-  - Empirical observation: both profiles maintain zero dropped samples with `q_peak` well below queue capacity (67 for prod, 22 for prod_fast)
-  - Design choice: unified batch size across all profiles simplifies configuration and ensures predictable latency behavior
+- **Release profiles (`esp32_prod_os`, `esp32_prod_o2`, `esp32_prod_o3`):** `MPX_BATCH_SIZE=128`
+  - Release optimization provides sufficient single-batch throughput for zero-drop operation across all validated release variants
+  - Empirical observation: `prod_o2` and `prod_o3` run with `q_peak` p95 = 1, while `prod_os` remains within queue budget with `q_peak` p95 = 96 and zero drops
+  - Batches smaller than or equal to 16 samples were observed to cause producer-consumer starvation and consequent packet drops, while a batch size of 32 is safe for the validated release pipeline
+  - Design choice: a unified batch size across release profiles simplifies configuration and preserves predictable latency behavior across the current build matrix
 
 **Rationale in algorithm terms:**
 
@@ -342,7 +344,7 @@ Decision:
 
 ---
 
-## 9.7 Design decision: WDT reset strategy
+## 9.6 Design decision: WDT reset strategy
 
 **Problem statement:** The process task must periodically reset the watchdog timer (WDT) to prevent false resets during legitimate heavy compute phases. The naive approach—calling `vTaskDelay(1)` in the compute loop—introduced an unacceptable 1 ms delay per processing cycle, resulting in ~250 ms overhead per 250 Hz pipeline cycle.
 
@@ -382,7 +384,7 @@ if ((now_tick - wdt_last_reset_tick) >= wdt_reset_period_ticks) {
 
 ---
 
-## 9.8 Design decision: WDT core exclusion
+## 9.7 Design decision: WDT core exclusion
 
 **Rationale:** The matrix-profile distance computation can exhibit variable latency depending on sample values and algorithm state. During heavy compute phases (particularly the incremental dot-product calculations), the process task running on core 1 may exceed the default WDT interrupt latency threshold, causing false watchdog resets.
 
@@ -422,7 +424,7 @@ This can be achieved via:
 
 ---
 
-## 9.9 SystemView dual-core trace export (CSV) — publication snapshot
+## 9.8 SystemView dual-core trace export (CSV) — publication snapshot
 
 **Date collected:** 2026-03-25
 **Environment:** `esp32_systemview` (instrumented build)
@@ -431,7 +433,7 @@ This can be achieved via:
 - `traces/instrumented_batch_reset120_core0_20260325_145349.csv`
 - `traces/instrumented_batch_reset120_core1_20260325_145349.csv`
 
-### 9.9.1 Capture integrity and event volume
+### 9.8.1 Capture integrity and event volume
 
 - Effective trace window: **120.049 s** (both cores)
 - OpenOCD capture report: **0 lost bytes**
@@ -452,7 +454,7 @@ Top contexts by event count:
 
 This confirms stable dual-core visibility and expected producer/consumer separation (`AcquireSignal` on core 0, `ProcessSignal` on core 1).
 
-### 9.9.2 Startup-to-steady-state timing
+### 9.8.2 Startup-to-steady-state timing
 
 First task execution events extracted from CSV:
 
@@ -465,7 +467,7 @@ $$\Delta t_{start} \approx 0.520\ \text{s}$$
 
 This lag is consistent with pipeline warm-up and first-batch accumulation after reset.
 
-### 9.9.3 Runtime slice durations (Task Run events)
+### 9.8.3 Runtime slice durations (Task Run events)
 
 Raw (including startup outliers):
 
@@ -483,7 +485,7 @@ Steady-state filtered snapshot (durations < 100 ms):
 
 Interpretation: after startup transients, both tasks exhibit narrow execution bands, with the consumer task (`ProcessSignal`) consistently below the producer in run-slice duration.
 
-### 9.9.4 Task cadence (inter-run interval)
+### 9.8.4 Task cadence (inter-run interval)
 
 Filtered intervals (`0 < \Delta t < 500 ms`):
 
@@ -494,7 +496,7 @@ Filtered intervals (`0 < \Delta t < 500 ms`):
 
 In steady-state, both tasks operate with comparable cadence (about 70 ms median inter-run interval), supporting pipeline synchronization with zero-drop behavior observed in serial metrics.
 
-### 9.9.5 Instrumentation visibility in exported trace
+### 9.8.5 Instrumentation visibility in exported trace
 
 The core 1 CSV contains explicit marker events for the instrumented compute section:
 
@@ -504,6 +506,6 @@ The core 1 CSV contains explicit marker events for the instrumented compute sect
 
 This is direct evidence that user instrumentation is active and can delimit heavyweight compute phases for publication figures.
 
-### 9.9.6 Publishable statement (ready to reuse)
+### 9.8.6 Publishable statement (ready to reuse)
 
 Across a 120.049 s dual-core SystemView capture with zero trace loss, the ESP32 pipeline shows stable producer/consumer partitioning (`AcquireSignal` on core 0 and `ProcessSignal` on core 1). In steady-state, task run durations remain bounded (`ProcessSignal`: median 31.596 ms, p95 40.711 ms; `AcquireSignal`: median 54.165 ms, p95 63.193 ms), and inter-run cadence is tightly clustered around 70 ms for both tasks. Exported marker events further confirm instrumented compute visibility with an observed marked block of 249.389 ms, enabling reproducible timeline-based profiling for publication.
