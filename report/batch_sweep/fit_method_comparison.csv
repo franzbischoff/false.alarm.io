@@ -1,0 +1,4 @@
+n_samples,history_size_s,fit_endpoints_overhead_ms,fit_endpoints_compute_ms_per_sample,fit_lsq_overhead_ms,fit_lsq_compute_ms_per_sample,delta_overhead_ms_lsq_minus_endpoints,delta_compute_msps_lsq_minus_endpoints
+1000,4,8.207,0.1964,8.485,0.1961,0.277,-0.0003
+2500,10,26.176,0.6672,26.411,0.6672,0.235,-0.0
+5000,20,55.187,1.4577,55.683,1.456,0.497,-0.0017

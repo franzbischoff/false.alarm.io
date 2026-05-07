@@ -410,17 +410,7 @@ This can be achieved via:
   - Core 1 task is deterministic and thoroughly tested (see Section 8, 20 unit + golden reference tests)
   - Core 0 tasks are lighter (acquisition triggers on timer, monitor publishes periodically) and benefit from WDT protection against unexpected contention
 
-**Evidence of correctness:** First experimental run (Section 9.5) showed zero watchdog-induced resets across all three profiles, with peak batch compute times ranging from 85.4 ms (prod_fast) to 446.6 ms (debug). None of these exceeded the 1000 ms WDT interval, confirming that the core exclusion is safe and that manual reset-on-timer (Section 9.7) is sufficient for the core 0 supervisor watchdog.
-
----
-
-## Next Steps
-
-1. **Repeat experimental runs:** Conduct 3–5 additional 60 s captures per profile to collect sufficient data for mean ± std statistics with confidence intervals (p95 latencies, throughput variance).
-
-2. **Enable FreeRTOS runtime statistics:** Optionally enable `CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS` to measure CPU load per task and validate that core 1 is fully occupied by the process task.
-
-3. **Statistical aggregation:** Compute publication-grade metrics and prepare figures (latency distributions, throughput over time, queue occupancy patterns).
+**Evidence of correctness:** First experimental run (Section 9.5) showed zero watchdog-induced resets across all three profiles, with peak batch compute times ranging from 85.4 ms (prod_o2) to 446.6 ms (debug). None of these exceeded the 1000 ms WDT interval, confirming that the core exclusion is safe and that manual reset-on-timer (Section 9.7) is sufficient for the core 0 supervisor watchdog.
 
 ---
 
@@ -509,3 +499,156 @@ This is direct evidence that user instrumentation is active and can delimit heav
 ### 9.8.6 Publishable statement (ready to reuse)
 
 Across a 120.049 s dual-core SystemView capture with zero trace loss, the ESP32 pipeline shows stable producer/consumer partitioning (`AcquireSignal` on core 0 and `ProcessSignal` on core 1). In steady-state, task run durations remain bounded (`ProcessSignal`: median 31.596 ms, p95 40.711 ms; `AcquireSignal`: median 54.165 ms, p95 63.193 ms), and inter-run cadence is tightly clustered around 70 ms for both tasks. Exported marker events further confirm instrumented compute visibility with an observed marked block of 249.389 ms, enabling reproducible timeline-based profiling for publication.
+
+---
+
+## 9.9 Batch-size characterization and operational boundary
+
+**Date collected:** 2026-05-07
+
+**Environment:** `esp32_prod_o2`, SD CSV input (`SIGNAL_SOURCE_KIND=0`), 250 Hz sampling, window `m=210`
+
+**Data source:** `report/batch_sweep/raw/*.csv` consolidated into `report/batch_sweep/batch_sweep_summary.csv` and `report/batch_sweep/batch_sweep_summary_agg.csv`.
+
+### 9.9.1 Valid measurement matrix
+
+The validated matrix covers:
+
+- batch size $B \in \{1, 8, 16, 32, 64, 128\}$
+- history/sample size $n \in \{1000, 2500, 5000\}$ (equivalently `HISTORY_SIZE_S` = 4, 10, 20)
+
+For each point, one run was captured, except `B=128, n=5000`, which has three runs.
+
+### 9.9.2 Measured batch time summary (final running mean)
+
+| n (samples) | B=1 (ms) | B=8 (ms) | B=16 (ms) | B=32 (ms) | B=64 (ms) | B=128 (ms) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 8.404 | 9.945 | 11.648 | 14.978 | 21.422 | 33.349 |
+| 2500 | 26.843 | 31.625 | 37.090 | 47.969 | 69.493 | 111.579 |
+| 5000 | 56.645 | 67.305 | 79.079 | 102.581 | 149.270 | 241.770 |
+
+Observations from queue/drop telemetry:
+
+- `B=1` drops for all tested `n`.
+- At `n=5000`, `B=8` and `B=16` still drop samples.
+- For `n=5000`, first no-drop point is `B=32`; `B=64` and `B=128` remain stable.
+
+### 9.9.3 Linear decomposition by history size
+
+Using the two-point anchor at each `n` (`B=1` and `B=128`):
+
+$$T(B; n) \approx O(n) + C(n)\,B$$
+
+Where:
+
+- $O(n)$ is fixed per-batch overhead
+- $C(n)$ is incremental compute per sample within the batch
+
+Fitted parameters:
+
+| n (samples) | O (ms) | C (ms/sample) |
+|---:|---:|---:|
+| 1000 | 8.207 | 0.1964 |
+| 2500 | 26.176 | 0.6672 |
+| 5000 | 55.187 | 1.4577 |
+
+This confirms the expected trend: both fixed overhead and per-sample compute cost increase with history size.
+
+### 9.9.4 Overhead fraction at baseline batch (B=128)
+
+From the fitted model, overhead share at `B=128` is:
+
+| n (samples) | T(128) measured (ms) | Overhead (%) | Compute (%) |
+|---:|---:|---:|---:|
+| 1000 | 33.349 | 24.6 | 75.4 |
+| 2500 | 111.579 | 23.5 | 76.5 |
+| 5000 | 241.770 | 22.8 | 77.2 |
+
+At the current production baseline (`n=5000`, `B=128`), compute dominates (~77%), with fixed overhead below 23%.
+
+### 9.9.4.1 Component breakdown for `n=5000` across all batch sizes
+
+Using the fitted parameters for `n=5000`:
+
+- $O = 55.187$ ms
+- $C = 1.4577$ ms/sample
+- $T(B) = O + C\cdot B$
+
+The decomposition by batch size is:
+
+| B | O (ms, fixed) | C\cdotB (ms, variable) | T(B) model (ms) | Overhead (%) | Compute (%) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 55.187 | 1.458 | 56.645 | 97.4 | 2.6 |
+| 8 | 55.187 | 11.662 | 66.848 | 82.6 | 17.4 |
+| 16 | 55.187 | 23.323 | 78.510 | 70.3 | 29.7 |
+| 32 | 55.187 | 46.646 | 101.833 | 54.2 | 45.8 |
+| 64 | 55.187 | 93.291 | 148.478 | 37.2 | 62.8 |
+| 128 | 55.187 | 186.583 | 241.770 | 22.8 | 77.2 |
+
+This table highlights the transition from overhead-dominated operation (small `B`) to compute-dominated operation (large `B`) for the production history size.
+
+### 9.9.5 Operational boundary for history size
+
+Additional boundary probes were executed for larger histories:
+
+- `n=6000`: startup abort on core 1 during `Mpx` allocation
+- `n=8000`: startup abort on core 1 during `Mpx` allocation
+- `n=10000`: startup abort on core 1 during `Mpx` allocation
+
+Backtrace decoding for both `n=6000` and `n=8000` maps to `MatrixProfile::Mpx` constructor allocations (`operator new[]` / `std::make_unique<float[]>` paths in `lib/Mpx/src/Mpx.cpp`), consistent with heap pressure during object initialization.
+
+Therefore, with the current firmware architecture and memory layout, the largest validated operational history remains:
+
+$$n_{max,validated} = 5000 \text{ samples} \quad (20\text{ s at }250\text{ Hz})$$
+
+### 9.9.6 Optimal batch-size selection criterion
+
+The measured batch-time model can be written as:
+
+$$T(B, n) = O(n) + C(n) \cdot B$$
+
+where `O(n)` is the fixed per-batch cost and `C(n)` is the marginal per-sample compute cost. For a stream sampled at frequency `f_s`, the processing load per second is:
+
+$$L(B, n) = T(B, n) \cdot \frac{f_s}{B} = O(n) \cdot \frac{f_s}{B} + C(n) \cdot f_s$$
+
+This expression makes the trade-off explicit:
+
+- `C(n) · f_s` is independent of `B` and represents the unavoidable work per second.
+- `O(n) · f_s / B` decreases as `B` increases, because the fixed per-batch overhead is amortized across more samples.
+
+Therefore, for a fixed history size `n` and sampling frequency `f_s`, increasing batch size always reduces total CPU time per second until another system constraint becomes dominant. The primary lower bound on `B` is the no-drop condition:
+
+$$T(B, n) \leq \frac{B}{f_s}$$
+
+Substituting the linear model gives:
+
+$$O(n) + C(n) \cdot B \leq \frac{B}{f_s}$$
+
+which yields the minimum feasible batch size:
+
+$$B^*_{min}(n, f_s) = \left\lceil \frac{O(n)}{\frac{1}{f_s} - C(n)} \right\rceil$$
+
+Using the endpoint-fitted parameters from Table 9.9.3 with `f_s = 250 Hz`:
+
+| `n` | `O(n)` (ms) | `C(n)` (ms/sample) | `B^*_{min}` from model | First measured no-drop `B` |
+|---:|---:|---:|---:|---:|
+| 1000 | 8.207 | 0.1964 | 3 | 8 |
+| 2500 | 26.176 | 0.6672 | 8 | 8 |
+| 5000 | 55.187 | 1.4577 | 22 | 32 |
+
+The measured no-drop threshold is equal to or above the analytical lower bound, as expected. The gap reflects runtime effects not captured by the idealized linear fit alone, including scheduler jitter, queueing delay, and other task-level interference.
+
+The practical tuning rule is therefore:
+
+1. Select `B` such that no drops occur at the target `f_s`.
+2. Among the no-drop candidates, prefer the largest `B` allowed by end-to-end latency requirements.
+
+This makes batch-size selection a constrained optimization problem rather than a pure throughput problem: small `B` reduces batch latency but wastes CPU on fixed overhead, whereas large `B` improves CPU efficiency but increases response latency.
+
+### 9.9.7 Artifacts
+
+- Per-run summary: `report/batch_sweep/batch_sweep_summary.csv`
+- Aggregated table by `(n, B)`: `report/batch_sweep/batch_sweep_summary_agg.csv`
+- Compact publication-ready table: `report/batch_sweep/batch_sweep_publication_table.csv`
+- Overhead models by history: `report/batch_sweep/overhead_model_n1000.csv`, `report/batch_sweep/overhead_model_n2500.csv`, `report/batch_sweep/overhead_model_n5000.csv`
+- Combined model table: `report/batch_sweep/overhead_models_all_n.csv`
